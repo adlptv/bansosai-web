@@ -1,0 +1,22 @@
+{
+  "name": "bansos-web",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "//": "Rebuild workspace. Version pins mirror the deployed runtime shape measured on VPS-B (astro ^5, @astrojs/node ^9.5.5). This is a controlled reimplementation, not recovered source.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "verify": "astro check && astro build"
+  },
+  "dependencies": {
+    "@astrojs/node": "^9.5.5",
+    "astro": "^5.0.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "typescript": "^5.9.3"
+  }
+}
