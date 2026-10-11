@@ -1,6 +1,12 @@
 ---
+// Top navigation. Session-aware: when the visitor is signed in it shows a
+// profile menu (email, plan, links, logout) instead of Login / Daftar Gratis.
 import Button from './Button.astro';
 import Icon from './Icon.astro';
+import { getSessionUser, getToken, type SessionUser } from '../lib/api/session';
+import { apiGet } from '../lib/api/saas';
+import { formatWib } from '../lib/format';
+import type { DashboardResponse } from '../lib/api/client';
 
 const path = Astro.url.pathname;
 const links = [
@@ -9,6 +15,30 @@ const links = [
   { href: '/pricing', label: 'Pricing' },
   { href: '/docs', label: 'Docs' },
 ];
+
+// Resolve the session server-side so the nav never shows "Login" to a signed-in
+// visitor. A failing gateway must not break the public page: fall back to the
+// signed-out nav.
+let user: SessionUser | null = null;
+let planName = 'Free';
+let subUntil = '';
+try {
+  user = await getSessionUser(Astro);
+  if (user) {
+    const token = getToken(Astro);
+    if (token) {
+      const dash = await apiGet<DashboardResponse>('/saas/api/dashboard', token, Astro.request);
+      planName = dash?.plan?.name ?? (user.isSupporter ? 'Supporter' : 'Free');
+      if (dash?.subscription?.expiresAtWib) subUntil = formatWib(dash.subscription.expiresAtWib);
+    }
+  }
+} catch {
+  /* keep signed-out nav */
+}
+
+const isAdmin = user?.role === 'admin';
+const dashboardHref = isAdmin ? '/admin' : '/app';
+const avatar = (user?.email || '?').trim().charAt(0).toUpperCase();
 ---
 
 <nav class="nav">
@@ -23,8 +53,41 @@ const links = [
         <a href={l.href} aria-current={path === l.href || path.startsWith(`${l.href}/`) ? 'page' : undefined}>{l.label}</a>
       ))}
       <a href="https://discord.gg/RMrRSeHcC" target="_blank" rel="noopener noreferrer">Discord</a>
-      <a href="/login">Login</a>
-      <Button href="/register" variant="primary" size="sm">Daftar Gratis</Button>
+
+      {user ? (
+        <div class="profile" data-profile>
+          <button class="profile-btn" type="button" aria-haspopup="menu" aria-expanded="false" data-profile-toggle>
+            <span class="profile-avatar">{avatar}</span>
+            <span class="profile-name">{user.username || user.email}</span>
+            <Icon name="chevron-down" size={14} />
+          </button>
+          <div class="profile-menu" role="menu" data-profile-menu hidden>
+            <div class="profile-head">
+              <div class="profile-head-email">{user.email}</div>
+              <div class="profile-head-meta">
+                Plan <b>{planName}</b>{subUntil ? ` · aktif s/d ${subUntil}` : ''}
+                {isAdmin ? ' · Admin' : ''}
+              </div>
+            </div>
+            <a role="menuitem" href={dashboardHref}>
+              <Icon name="grid" size={15} /> {isAdmin ? 'Dashboard admin' : 'Dashboard'}
+            </a>
+            <a role="menuitem" href="/app/keys"><Icon name="key" size={15} /> API Keys</a>
+            <a role="menuitem" href="/app/usage"><Icon name="activity" size={15} /> Usage</a>
+            <a role="menuitem" href="/app/billing"><Icon name="card" size={15} /> Billing</a>
+            <a role="menuitem" href="/app/settings"><Icon name="settings" size={15} /> Pengaturan</a>
+            {isAdmin && <a role="menuitem" href="/app"><Icon name="user" size={15} /> Tampilan user</a>}
+            <form method="POST" action="/api/logout" class="profile-logout">
+              <button type="submit" role="menuitem"><Icon name="logout" size={15} /> Keluar</button>
+            </form>
+          </div>
+        </div>
+      ) : (
+        <>
+          <a href="/login">Login</a>
+          <Button href="/register" variant="primary" size="sm">Daftar Gratis</Button>
+        </>
+      )}
     </div>
 
     <button
@@ -45,16 +108,37 @@ const links = [
         <li><a href={l.href} aria-current={path === l.href || path.startsWith(`${l.href}/`) ? 'page' : undefined}>{l.label}</a></li>
       ))}
       <li><a href="https://discord.gg/RMrRSeHcC" target="_blank" rel="noopener noreferrer">Discord</a></li>
-      <li><a href="/login">Login</a></li>
+      {user ? (
+        <>
+          <li class="nav-mobile-user">
+            <span class="profile-avatar">{avatar}</span>
+            <span><b>{user.email}</b><br /><span class="muted small">Plan {planName}{isAdmin ? ' · Admin' : ''}</span></span>
+          </li>
+          <li><a href={dashboardHref}>{isAdmin ? 'Dashboard admin' : 'Dashboard'}</a></li>
+          <li><a href="/app/keys">API Keys</a></li>
+          <li><a href="/app/usage">Usage</a></li>
+          <li><a href="/app/billing">Billing</a></li>
+          <li><a href="/app/settings">Pengaturan</a></li>
+          <li>
+            <form method="POST" action="/api/logout">
+              <button type="submit" class="btn btn-ghost btn-block">Keluar</button>
+            </form>
+          </li>
+        </>
+      ) : (
+        <li><a href="/login">Login</a></li>
+      )}
     </ul>
-    <div class="container" style="padding-bottom:var(--sb-lg)">
-      <Button href="/register" variant="primary" block>Daftar Gratis</Button>
-    </div>
+    {!user && (
+      <div class="container" style="padding-bottom:var(--sb-lg)">
+        <Button href="/register" variant="primary" block>Daftar Gratis</Button>
+      </div>
+    )}
   </div>
 </nav>
 
 <script>
-  // Hamburger toggle for < 768px. Kept minimal: one attribute flip, no deps.
+  // Hamburger toggle for < 768px.
   const toggle = document.querySelector('[data-nav-toggle]');
   const panel = document.querySelector('[data-nav-panel]');
   if (toggle && panel) {
@@ -62,6 +146,27 @@ const links = [
       const open = panel.getAttribute('data-open') === 'true';
       panel.setAttribute('data-open', String(!open));
       toggle.setAttribute('aria-expanded', String(!open));
+    });
+  }
+
+  // Profile dropdown: click to open, click outside / Escape to close.
+  const profile = document.querySelector('[data-profile]');
+  const profileToggle = document.querySelector('[data-profile-toggle]');
+  const profileMenu = document.querySelector('[data-profile-menu]');
+  if (profile && profileToggle && profileMenu) {
+    const setOpen = (open: boolean) => {
+      (profileMenu as HTMLElement).hidden = !open;
+      profileToggle.setAttribute('aria-expanded', String(open));
+    };
+    profileToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setOpen((profileMenu as HTMLElement).hidden);
+    });
+    document.addEventListener('click', (e) => {
+      if (!profile.contains(e.target as Node)) setOpen(false);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') setOpen(false);
     });
   }
 </script>

@@ -270,6 +270,102 @@ img { max-width: 100%; height: auto; }
 }
 .nav-mobile .btn { width: 100%; margin-top: var(--sb-md); }
 
+/* ── Nav profile menu ──────────────────────────────────────────────────────── */
+
+.profile { position: relative; }
+.profile-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--sb-hairline-strong);
+  border-radius: 999px;
+  background: var(--sb-canvas-raised);
+  color: var(--sb-ink);
+  font-size: var(--sb-caption);
+  font-weight: 600;
+  cursor: pointer;
+}
+.profile-btn:hover { border-color: var(--sb-ink-mute); }
+.profile-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--sb-accent, #34d399);
+  color: #04120b;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.profile-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-btn svg { color: var(--sb-ink-mute); }
+.profile-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  z-index: 60;
+  min-width: 240px;
+  padding: 6px;
+  border: 1px solid var(--sb-hairline-strong);
+  border-radius: var(--sb-r-md, 12px);
+  background: var(--sb-canvas-raised);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+.profile-head {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--sb-hairline);
+  margin-bottom: 6px;
+}
+.profile-head-email {
+  font-size: var(--sb-caption);
+  font-weight: 600;
+  color: var(--sb-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.profile-head-meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--sb-ink-mute);
+}
+.profile-head-meta b { color: var(--sb-ink); }
+.profile-menu a,
+.profile-logout button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--sb-ink);
+  font-size: var(--sb-caption);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.profile-menu a:hover,
+.profile-logout button:hover { background: var(--sb-canvas); }
+.profile-menu a svg,
+.profile-logout button svg { color: var(--sb-ink-mute); flex: none; }
+.profile-logout { margin-top: 4px; border-top: 1px solid var(--sb-hairline); padding-top: 4px; }
+.nav-mobile-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: var(--sb-md) 0;
+  font-size: var(--sb-caption);
+}
+
 /* ── Hero ──────────────────────────────────────────────────────────────────── */
 
 .hero {
