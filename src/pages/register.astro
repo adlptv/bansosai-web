@@ -5,6 +5,12 @@ import Icon from '../components/Icon.astro';
 const params = Astro.url.searchParams;
 const errorMessage = params.get('error');
 const prefillEmail = params.get('email') ?? '';
+
+// Cloudflare Turnstile site key. Public value (it ships in the page HTML);
+// overridable per-environment without a rebuild. The matching secret lives only
+// on the gateway, which verifies the token on registration.
+const turnstileSiteKey =
+  import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || '0x4AAAAAAEJZAWxIam2ISD5R';
 ---
 
 <Base
@@ -53,6 +59,11 @@ const prefillEmail = params.get('email') ?? '';
           <input id="register-password" class="input" type="password" name="password" required minlength="8" autocomplete="new-password" />
           <p class="muted small" style="margin:var(--sb-xs) 0 0">Minimal 8 karakter, kombinasi huruf dan angka.</p>
         </div>
+        <div class="field">
+          <label class="label" for="register-confirm">Konfirmasi password</label>
+          <input id="register-confirm" class="input" type="password" name="confirm" required minlength="8" autocomplete="new-password" />
+        </div>
+        <div class="cf-turnstile" data-sitekey={turnstileSiteKey} data-theme="dark" style="margin-top:var(--sb-md)"></div>
         <div class="form-actions">
           <button type="submit" class="btn btn-primary btn-block">Daftar</button>
         </div>
@@ -63,6 +74,8 @@ const prefillEmail = params.get('email') ?? '';
       </p>
     </div>
   </div>
+
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer is:inline></script>
 
   <script>
     // Mirror the gateway's registration email policy client-side so the user

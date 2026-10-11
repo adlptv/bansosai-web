@@ -6,11 +6,17 @@
 
 import type { APIRoute } from 'astro';
 import { getApi } from '../../../lib/api/server';
-import { sessionCookie, redirectWith } from '../../../lib/api/auth';
+import { sessionCookie, redirectWith, isSameOrigin } from '../../../lib/api/auth';
 
 export const prerender = false;
 
-export const POST: APIRoute = async ({ request, url }) => {
+export const POST: APIRoute = async ({ request, url, site }) => {
+  // CSRF guard (Astro's own is disabled because it cannot see the proxied
+  // origin). A foreign origin must not be able to post a login form here.
+  if (!isSameOrigin(request, site?.toString() ?? import.meta.env.SITE)) {
+    return new Response('Forbidden', { status: 403 });
+  }
+
   const form = await request.formData();
   const email = String(form.get('email') ?? '').trim();
   const password = String(form.get('password') ?? '');

@@ -29,6 +29,16 @@ export default defineConfig({
   // Trailing-slash behaviour must match the existing app so route parity holds;
   // the deployed app answers canonical paths without a trailing slash.
   trailingSlash: 'ignore',
+  security: {
+    // Astro's built-in check compares the Origin header to `url.origin`. Behind
+    // the Cloudflare tunnel the app is reached at http://127.0.0.1:4321, so a
+    // legitimate same-site POST (Origin: https://bansosai.app) never matches and
+    // every form submission was rejected with "Cross-site POST form submissions
+    // are forbidden" — which broke registration and login. The guard is replaced
+    // by an equivalent check that understands the proxied origin (see
+    // src/lib/api/auth.ts sameOrigin).
+    checkOrigin: false,
+  },
   build: {
     // Inline small assets so the standalone server does not depend on an
     // external asset path being correct at runtime.

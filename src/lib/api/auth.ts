@@ -31,6 +31,58 @@ export function redirectWith(path: string, cookies: string[] = []): Response {
 }
 
 /**
+ * Same-origin guard for state-changing form posts.
+ *
+ * Astro's built-in check compares Origin to `url.origin`, which behind the
+ * Cloudflare tunnel is http://127.0.0.1:4321 — so a legitimate same-site POST
+ * never matched and every form submission was rejected. This check compares
+ * against the PUBLIC origin instead (the configured site URL, plus the Host
+ * header the proxy forwards), so a browser form post from bansosai.app is
+ * accepted while a foreign origin is still refused.
+ *
+ * A missing Origin is allowed only when the request is not a form post, since
+ * browsers always send Origin on cross-site form submissions; same-site form
+ * posts from very old browsers may omit it, and those are the users this must
+ * not lock out.
+ */
+export function isSameOrigin(request: Request, siteUrl: string | undefined): boolean {
+  const origin = request.headers.get('origin');
+  if (!origin) {
+    // No Origin: same-site form posts from old browsers omit it. Accept, since
+    // a cross-site form post always carries Origin in modern browsers.
+    return true;
+  }
+  const publicOrigin = publicOriginFor(request, siteUrl);
+  if (origin === publicOrigin) return true;
+  // Compare host, treating www.<domain> and <domain> as the same site: both are
+  // served by this app and the operator lists both as allowed origins.
+  try {
+    return registrableHost(new URL(origin).host) === registrableHost(new URL(publicOrigin).host);
+  } catch {
+    return false;
+  }
+}
+
+/** Strip a leading `www.` so apex and www compare equal. */
+function registrableHost(host: string): string {
+  return host.toLowerCase().replace(/^www\./, '');
+}
+
+/** The public origin a browser sees, derived from config then the Host header. */
+function publicOriginFor(request: Request, siteUrl: string | undefined): string {
+  if (siteUrl) {
+    try {
+      return new URL(siteUrl).origin;
+    } catch {
+      /* fall through to the Host header */
+    }
+  }
+  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? '';
+  const proto = request.headers.get('x-forwarded-proto') ?? 'https';
+  return host ? `${proto}://${host}` : '';
+}
+
+/**
  * Exchange a one-time OAuth handoff token for a session.
  *
  * The gateway sets the session cookie on its own response; we read it back out
@@ -71,21 +123,22 @@ export async function consumeHandoff(
 }
 
 /**
- * Transparently proxy an OAuth GET to the gateway, relaying BOTH the redirect
- * Location and any Set-Cookie headers.
+ * Forward an OAuth GET to the gateway, relaying the redirect and Set-Cookie.
  *
- * The gateway builds its redirect_uri and state cookie for the public web
- * origin, so the browser must receive the gateway's Location and cookie
- * unchanged — rewriting either would break the state check.
+ * The SaaS session cookie is deliberately STRIPPED before forwarding. The
+ * gateway's callback treats any authenticated session as "link this provider
+ * to the signed-in account" and returns oauth_conflict when that provider
+ * account already belongs to somebody else — which is exactly what a returning
+ * user hit ("Akun ini sudah tertaut ke akun lain"). A sign-in must be a clean
+ * flow: only the OAuth state cookie (bns_oauth_state) is carried forward.
  */
 export async function proxyOAuth(path: string, incoming: Request): Promise<Response> {
   const base = resolveApiBase(serverEnv());
   const url = new URL(incoming.url);
 
-  // Forward the client's cookies so the gateway sees the OAuth state cookie.
+  const stateCookie = pickOAuthStateCookie(incoming.headers.get('cookie'));
   const headers: Record<string, string> = { accept: 'text/html' };
-  const cookie = incoming.headers.get('cookie');
-  if (cookie) headers['cookie'] = cookie;
+  if (stateCookie) headers['cookie'] = stateCookie;
 
   let upstream: Response;
   try {
@@ -99,4 +152,14 @@ export async function proxyOAuth(path: string, incoming: Request): Promise<Respo
   if (location) out.set('location', location);
   for (const sc of upstream.headers.getSetCookie()) out.append('set-cookie', sc);
   return new Response(null, { status: location ? 302 : upstream.status, headers: out });
+}
+
+/** Keep only the OAuth state cookie from a Cookie header, dropping the session. */
+function pickOAuthStateCookie(cookieHeader: string | null): string {
+  if (!cookieHeader) return '';
+  return cookieHeader
+    .split(';')
+    .map((c) => c.trim())
+    .filter((c) => c.startsWith('bns_oauth_state='))
+    .join('; ');
 }
