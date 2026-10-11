@@ -1,0 +1,39 @@
+---
+import Button from './Button.astro';
+import { formatIdr, formatNumber, periodLabel, quotaLabel } from '../lib/format';
+import type { Plan, PlanSlot } from '../lib/api/client';
+
+interface Props {
+  plan: Plan;
+  planSlot?: PlanSlot;
+  featured?: boolean;
+}
+const { plan, planSlot, featured = false } = Astro.props;
+
+const features: string[] = [];
+if (plan.code === 'free') {
+  features.push('Aktif otomatis setelah daftar', 'Tanpa kartu kredit', 'Semua model free');
+} else {
+  features.push(quotaLabel(plan.tokenQuota));
+}
+if (plan.rpmLimit) features.push(`${plan.rpmLimit} RPM`);
+if (plan.maxConcurrent) features.push(`${plan.maxConcurrent} concurrent`);
+features.push('Semua model aktif');
+---
+
+<div class={`price-card ${featured ? 'featured' : ''}`}>
+  <h3>{plan.name}</h3>
+  <div class="price">{formatIdr(plan.priceIdr)}</div>
+  <div class="price-period">{plan.priceIdr === 0 ? 'selamanya' : periodLabel(plan.period)}</div>
+  {planSlot && (
+    <p class="slot-note">
+      {formatNumber(planSlot.claimed)}/{formatNumber(planSlot.limit)} slot terisi · sisa {formatNumber(planSlot.remaining)}
+    </p>
+  )}
+  <ul>
+    {features.map((f) => <li>{f}</li>)}
+  </ul>
+  <Button href="/register" variant="primary" block>
+    {plan.priceIdr === 0 ? 'Mulai Gratis' : `Pilih ${plan.name}`}
+  </Button>
+</div>

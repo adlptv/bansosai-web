@@ -1,24 +1,102 @@
 ---
-// Minimal page shell. Exists so the workspace can be installed, type-checked,
-// and built before feature work starts. It intentionally implements no product
-// behaviour: the real pages are written only after the plan's evidence gates
-// pass, so this file must not grow into a partial reimplementation.
+import Base from '../layouts/Base.astro';
+import Hero from '../components/Hero.astro';
+import ModelTicker from '../components/ModelTicker.astro';
+import FeatureRow from '../components/FeatureRow.astro';
+import PricingTier from '../components/PricingTier.astro';
+import Button from '../components/Button.astro';
+import { getApi } from '../lib/api/server';
+import { organizationJsonLd, faqJsonLd } from '../lib/seo';
+import type { Model, Plan, PlanSlot } from '../lib/api/client';
+
+const api = getApi();
+
+// Data is best-effort: a transient API failure must degrade the page, not break it.
+let models: Model[] = [];
+let plans: Plan[] = [];
+let slots: Record<string, PlanSlot> = {};
+try {
+  const [m, p] = await Promise.all([api.getModels(), api.getPlans()]);
+  models = m.models ?? [];
+  plans = (p.plans ?? []).filter((x) => x.active);
+  slots = p.slots ?? {};
+} catch {
+  /* render the static marketing shell */
+}
+
+// Show a curated handful on the landing page: the free tier plus one paid tier.
+const landingPlans = plans.filter((p) => p.code === 'free' || p.code === 'unlimited' || p.code === 'monthly');
+
+const faqs = [
+  {
+    question: 'Apakah bansosAI gratis?',
+    answer:
+      'Ya. Plan Free aktif otomatis setelah daftar dan memberi kuota token bulanan tanpa kartu kredit. Plan berbayar tersedia bila butuh kuota dan RPM lebih besar.',
+  },
+  {
+    question: 'Apakah endpoint-nya kompatibel dengan SDK OpenAI?',
+    answer:
+      'Kompatibel. Cukup ganti base URL dan API key; SDK OpenAI yang sudah dipakai tidak perlu diubah.',
+  },
+  {
+    question: 'Model apa saja yang tersedia?',
+    answer:
+      'Katalog mencakup model dari Anthropic, OpenAI, Google, DeepSeek, Qwen, Grok, GLM, dan lainnya — semuanya lewat satu API key.',
+  },
+];
 ---
 
-<!doctype html>
-<html lang="id">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Rebuild scaffold</title>
-  </head>
-  <body>
-    <main>
-      <h1>Rebuild scaffold</h1>
-      <p>
-        This route exists only to prove the build pipeline works. No product
-        behaviour is implemented yet.
-      </p>
-    </main>
-  </body>
-</html>
+<Base
+  title="AI Aggregator — Satu API untuk Semua Model AI"
+  description="Satu API OpenAI-compatible untuk puluhan model AI frontier. Routing otomatis, harga transparan, dan kuota gratis tanpa kartu kredit."
+  jsonLd={[organizationJsonLd(), faqJsonLd(faqs)]}
+>
+  <main>
+    <Hero />
+    <ModelTicker models={models} />
+    <FeatureRow />
+
+    {landingPlans.length > 0 && (
+      <section class="section section-soft">
+        <div class="container">
+          <header class="page-header center">
+            <h2>Mulai gratis. Upgrade tanpa migrasi provider.</h2>
+            <p>Tarif per token tampil apa adanya — tanpa biaya tersembunyi.</p>
+          </header>
+          <div class="pricing-grid">
+            {landingPlans.map((p) => (
+              <PricingTier plan={p} planSlot={slots[`${p.code}|${p.period}`]} featured={p.code === 'free'} />
+            ))}
+          </div>
+          <p class="center" style="margin-top:var(--sb-xl)">
+            <a href="/pricing">Lihat semua plan <span aria-hidden="true">→</span></a>
+          </p>
+        </div>
+      </section>
+    )}
+
+    <section class="section">
+      <div class="container container-narrow">
+        <header class="page-header center">
+          <h2>Pertanyaan yang sering ditanya</h2>
+        </header>
+        <div class="stack-sm">
+          {faqs.map((f) => (
+            <details class="card" style="padding:var(--sb-lg)">
+              <summary style="cursor:pointer;font-weight:500">{f.question}</summary>
+              <p class="muted" style="margin:var(--sb-md) 0 0">{f.answer}</p>
+            </details>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-band">
+      <div class="container">
+        <h2>Siap membangun?</h2>
+        <p>Dapatkan API key pertama kamu dalam satu menit.</p>
+        <Button href="/register" variant="primary" size="lg">Buat API key</Button>
+      </div>
+    </section>
+  </main>
+</Base>

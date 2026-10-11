@@ -13,6 +13,8 @@ import { defineConfig } from 'astro/config';
 import node from '@astrojs/node';
 
 export default defineConfig({
+  // Canonical origin for absolute URLs (canonical, OG, sitemap, JSON-LD).
+  site: 'https://bansosai.app',
   // SSR: every request hits the server, because pages render session-scoped
   // and announcement data per viewer.
   output: 'server',

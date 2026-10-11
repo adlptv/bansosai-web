@@ -1,0 +1,91 @@
+---
+import Base from '../layouts/Base.astro';
+import Icon from '../components/Icon.astro';
+import { consumeHandoff, sessionCookie, redirectWith } from '../lib/api/auth';
+
+const params = Astro.url.searchParams;
+const oauthStatus = params.get('oauth');
+const handoff = params.get('handoff');
+const errorMessage = params.get('error');
+const justRegistered = params.get('registered') === '1';
+const prefillEmail = params.get('email') ?? '';
+
+// Consume a successful OAuth handoff server-side: exchange the one-time token
+// for a session, set the httpOnly cookie for THIS origin, and redirect to /app.
+// The token never lingers in the browser URL.
+if (oauthStatus === 'success' && handoff) {
+  const result = await consumeHandoff(handoff);
+  if (result.ok && result.sessionToken) {
+    const secure = Astro.url.protocol === 'https:';
+    const res = redirectWith('/app', [sessionCookie(result.sessionToken, secure)]);
+    return res;
+  }
+  return redirectWith('/login?error=' + encodeURIComponent('Sesi OAuth tidak valid. Coba lagi.'));
+}
+
+const oauthMessages: Record<string, string> = {
+  oauth_denied: 'Login Google dibatalkan.',
+  oauth_error: 'Login Google gagal. Coba lagi atau gunakan email dan password.',
+  oauth_session_lost: 'Sesi login hilang. Mulai ulang dari halaman ini.',
+  oauth_conflict: 'Akun ini sudah tertaut ke akun lain.',
+  oauth_unavailable: 'Login Google sedang tidak tersedia.',
+  oauth_gmail_only: 'Alamat Google ini tidak bisa dipakai untuk masuk.',
+};
+
+const notice = errorMessage
+  ? { kind: 'error' as const, text: errorMessage }
+  : oauthStatus && oauthMessages[oauthStatus]
+    ? { kind: 'error' as const, text: oauthMessages[oauthStatus] }
+    : justRegistered
+      ? { kind: 'success' as const, text: 'Akun berhasil dibuat. Silakan masuk.' }
+      : null;
+---
+
+<Base
+  title="Masuk ke Console"
+  description="Masuk ke akun bansosAI untuk mengelola API key, memantau pemakaian, dan mengatur kuota."
+  canonical="/login"
+  noindex
+  bare
+>
+  <div class="auth-shell">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <img class="brand-mark" src="/bansosai-mark.png" alt="" width="28" height="28" />
+        Ban<span>sos</span>AI
+      </div>
+      <h1>Masuk</h1>
+      <p class="auth-sub">Gunakan email akun bansosAI untuk membuka console.</p>
+
+      {notice && (
+        <div class="form-error" role="status" style={notice.kind === 'success' ? 'border-color:var(--sb-primary)' : undefined}>
+          {notice.text}
+        </div>
+      )}
+
+      <a class="btn btn-ghost btn-block" href="/api/oauth/google/start">
+        <Icon name="external-link" size={16} /> Lanjutkan dengan Google
+      </a>
+
+      <div class="auth-sep">atau email</div>
+
+      <form method="POST" action="/api/auth/login">
+        <div class="field">
+          <label class="label" for="login-email">Email</label>
+          <input id="login-email" class="input" type="email" name="email" required autocomplete="email" value={prefillEmail} />
+        </div>
+        <div class="field">
+          <label class="label" for="login-password">Password</label>
+          <input id="login-password" class="input" type="password" name="password" required autocomplete="current-password" />
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-block">Login</button>
+        </div>
+      </form>
+
+      <p class="auth-sub" style="margin:var(--sb-lg) 0 0">
+        Belum punya akun? <a href="/register">Daftar gratis</a>
+      </p>
+    </div>
+  </div>
+</Base>

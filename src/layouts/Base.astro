@@ -1,0 +1,103 @@
+---
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import Banner from '../components/Banner.astro';
+import { getApi } from '../lib/api/server';
+import { buildMeta, SITE_NAME } from '../lib/seo';
+import type { Announcement } from '../lib/api/client';
+import '../styles/tokens.css';
+import '../styles/skin.css';
+
+interface Props {
+  title: string;
+  description: string;
+  /** Site-relative canonical path. Defaults to the current pathname. */
+  canonical?: string;
+  ogImage?: string;
+  ogType?: 'website' | 'article' | 'product';
+  noindex?: boolean;
+  /** Extra JSON-LD objects to emit alongside the page. */
+  jsonLd?: object[];
+  /** Hide the announcement banner (used on auth pages). */
+  bare?: boolean;
+}
+
+const {
+  title,
+  description,
+  canonical,
+  ogImage,
+  ogType,
+  noindex,
+  jsonLd = [],
+  bare = false,
+} = Astro.props;
+
+const meta = buildMeta({
+  title,
+  description,
+  canonical: canonical ?? Astro.url.pathname,
+  ogImage,
+  type: ogType,
+  noindex,
+});
+
+// Announcement banner is fetched server-side; a failing API must never take
+// the page down, so the banner simply does not render.
+let announcements: Announcement[] = [];
+try {
+  const res = await getApi().getAnnouncements();
+  announcements = res.items ?? [];
+} catch {
+  announcements = [];
+}
+---
+
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{meta.title}</title>
+    <meta name="description" content={meta.description} />
+    <link rel="canonical" href={meta.canonical} />
+    {meta.noindex && <meta name="robots" content="noindex, nofollow" />}
+
+    <meta property="og:type" content={meta.ogType} />
+    <meta property="og:site_name" content={SITE_NAME} />
+    <meta property="og:title" content={meta.title} />
+    <meta property="og:description" content={meta.description} />
+    <meta property="og:url" content={meta.canonical} />
+    <meta property="og:image" content={meta.ogImage} />
+    <meta property="og:locale" content="id_ID" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={meta.title} />
+    <meta name="twitter:description" content={meta.description} />
+    <meta name="twitter:image" content={meta.ogImage} />
+
+    <meta name="theme-color" content="#3ecf8e" />
+    <meta name="color-scheme" content="light" />
+
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/bansosai-touch.png" />
+    <link rel="sitemap" href="/sitemap.xml" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    />
+
+    {jsonLd.map((obj) => (
+      <script type="application/ld+json" set:html={JSON.stringify(obj)} />
+    ))}
+  </head>
+  <body>
+    {!bare && <Nav />}
+    {!bare && <Banner items={announcements} />}
+    <slot />
+    {!bare && <Footer />}
+  </body>
+</html>

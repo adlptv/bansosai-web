@@ -1,0 +1,50 @@
+---
+import Base from '../layouts/Base.astro';
+import { breadcrumbJsonLd } from '../lib/seo';
+---
+
+<Base
+  title="Tentang bansosAI"
+  description="bansosAI adalah agregator API AI yang menyatukan puluhan model frontier di balik satu API key OpenAI-compatible, dengan routing otomatis dan harga transparan."
+  canonical="/about"
+  jsonLd={[breadcrumbJsonLd([{ name: 'Beranda', path: '/' }, { name: 'Tentang', path: '/about' }])]}
+>
+  <main>
+    <section class="section">
+      <div class="container container-narrow">
+        <header class="page-header">
+          <h1>Tentang Kami</h1>
+        </header>
+
+        <h2>Apa itu bansosAI?</h2>
+        <p>
+          bansosAI adalah platform agregator AI. Alih-alih mendaftar ke banyak provider dan mengelola
+          banyak API key, kamu memakai satu endpoint dan satu kredensial untuk menjangkau puluhan
+          model frontier — dari Anthropic, OpenAI, Google, DeepSeek, Qwen, hingga Grok.
+        </p>
+
+        <h2>Kenapa kami membangunnya</h2>
+        <p>
+          Mengelola beberapa provider itu melelahkan: harga berbeda-beda, format error tidak seragam,
+          dan satu provider down bisa menghentikan seluruh layanan. Kami menyatukan semuanya di
+          belakang satu API yang kompatibel dengan OpenAI, dengan routing otomatis yang memindahkan
+          request ke provider sehat saat ada gangguan.
+        </p>
+
+        <h2>Yang membuat kami berbeda</h2>
+        <ul>
+          <li><b>Satu API key.</b> Ganti model cukup ganti satu string di request.</li>
+          <li><b>Harga transparan.</b> Tarif per token tampil apa adanya, tanpa markup tersembunyi.</li>
+          <li><b>Routing otomatis.</b> Failover antar provider berjalan tanpa konfigurasi manual.</li>
+          <li><b>Observability.</b> Pemakaian, token, dan tingkat keberhasilan terlihat real-time.</li>
+        </ul>
+
+        <h2>Untuk siapa</h2>
+        <p>
+          Untuk developer, tim produk, dan peneliti yang ingin membangun dengan banyak model tanpa
+          tersandera satu vendor. Kalau kamu bisa memakai SDK OpenAI, kamu bisa memakai bansosAI.
+        </p>
+      </div>
+    </section>
+  </main>
+</Base>

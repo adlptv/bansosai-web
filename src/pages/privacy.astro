@@ -1,0 +1,72 @@
+---
+import Base from '../layouts/Base.astro';
+import { breadcrumbJsonLd } from '../lib/seo';
+const updated = 'Oktober 2026';
+---
+
+<Base
+  title="Kebijakan Privasi"
+  description="Bagaimana bansosAI mengumpulkan, memakai, dan melindungi data kamu saat memakai layanan API agregator kami."
+  canonical="/privacy"
+  jsonLd={[breadcrumbJsonLd([{ name: 'Beranda', path: '/' }, { name: 'Privasi', path: '/privacy' }])]}
+>
+  <main>
+    <section class="section">
+      <div class="container container-narrow">
+        <header class="page-header">
+          <h1>Kebijakan Privasi</h1>
+          <p class="muted small">Terakhir diperbarui: {updated}</p>
+        </header>
+
+        <h2>Data yang kami kumpulkan</h2>
+        <p>
+          Untuk menjalankan layanan, kami menyimpan data akun (email, username, dan hash password),
+          metadata pemakaian (jumlah request dan token per key), serta informasi teknis seperti
+          alamat IP dan user-agent saat login. Kami tidak menyimpan isi prompt atau respons kamu
+          untuk keperluan selain meneruskan request ke provider yang kamu pilih.
+        </p>
+
+        <h2>Cara kami memakainya</h2>
+        <ul>
+          <li>Mengautentikasi akun dan menjaga sesi login tetap aman.</li>
+          <li>Menegakkan kuota, batas RPM, dan kebijakan plan.</li>
+          <li>Menampilkan statistik pemakaian di console.</li>
+          <li>Mendeteksi penyalahgunaan dan menjaga ketersediaan layanan.</li>
+        </ul>
+
+        <h2>Berbagi dengan pihak ketiga</h2>
+        <p>
+          Request kamu diteruskan ke provider model yang kamu pilih, karena itulah cara layanan ini
+          bekerja. Selain itu, kami tidak menjual atau membagikan data kamu ke pihak ketiga untuk
+          tujuan periklanan.
+        </p>
+
+        <h2>Keamanan</h2>
+        <p>
+          Password disimpan sebagai hash, sesi memakai cookie httpOnly, dan API key hanya
+          ditampilkan sekali saat dibuat. Kami menganjurkan menyimpan key di variabel lingkungan dan
+          tidak pernah menaruhnya di kode yang bisa diakses publik.
+        </p>
+
+        <h2>Retensi</h2>
+        <p>
+          Metadata pemakaian disimpan selama akun aktif agar statistik historis tetap tersedia.
+          Setelah akun dihapus, data terkait dihapus atau dianonimkan dalam waktu yang wajar, kecuali
+          bila kami diwajibkan menyimpannya untuk kepatuhan hukum.
+        </p>
+
+        <h2>Hak kamu</h2>
+        <p>
+          Kamu bisa meminta salinan, koreksi, atau penghapusan data pribadimu dengan menghubungi
+          kami lewat <a href="/contact">halaman kontak</a>.
+        </p>
+
+        <h2>Perubahan kebijakan</h2>
+        <p>
+          Bila kebijakan ini berubah secara material, kami akan memperbarui tanggal di atas dan
+          memberi tahu lewat pengumuman di situs.
+        </p>
+      </div>
+    </section>
+  </main>
+</Base>

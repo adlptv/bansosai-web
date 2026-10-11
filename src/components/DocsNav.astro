@@ -1,0 +1,26 @@
+---
+interface Props {
+  current?: string;
+}
+const { current } = Astro.props;
+
+const pages = [
+  { slug: 'quickstart', label: 'Quickstart', href: '/docs/quickstart' },
+  { slug: 'api-reference', label: 'Referensi API', href: '/docs/api-reference' },
+  { slug: 'models', label: 'Panduan Model', href: '/docs/models' },
+  { slug: 'pricing', label: 'Harga & Kuota', href: '/docs/pricing' },
+  { slug: 'faq', label: 'FAQ', href: '/docs/faq' },
+];
+---
+
+<nav class="docs-nav" aria-label="Dokumentasi">
+  <h2>Dokumentasi</h2>
+  <ul>
+    <li><a href="/docs" aria-current={!current ? 'page' : undefined}>Ikhtisar</a></li>
+    {pages.map((p) => (
+      <li>
+        <a href={p.href} aria-current={current === p.slug ? 'page' : undefined}>{p.label}</a>
+      </li>
+    ))}
+  </ul>
+</nav>

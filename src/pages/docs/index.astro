@@ -1,0 +1,40 @@
+---
+import Base from '../../layouts/Base.astro';
+import DocsNav from '../../components/DocsNav.astro';
+import { breadcrumbJsonLd } from '../../lib/seo';
+import { getCollection } from 'astro:content';
+
+const entries = (await getCollection('docs')).sort((a, b) => a.data.order - b.data.order);
+---
+
+<Base
+  title="Dokumentasi bansosAI"
+  description="Panduan lengkap memakai bansosAI: quickstart, referensi API, panduan model, harga & kuota, dan FAQ."
+  canonical="/docs"
+  jsonLd={[breadcrumbJsonLd([{ name: 'Beranda', path: '/' }, { name: 'Dokumentasi', path: '/docs' }])]}
+>
+  <main>
+    <section class="section">
+      <div class="container">
+        <div class="docs-layout">
+          <DocsNav />
+          <div class="docs-body">
+            <h1>Dokumentasi</h1>
+            <p class="muted" style="font-size:var(--sb-body-lg)">
+              Semua yang kamu butuhkan untuk memakai bansosAI: dari request pertama sampai mengatur
+              kuota produksi.
+            </p>
+            <div class="grid-2" style="margin-top:var(--sb-xl)">
+              {entries.map((e) => (
+                <a class="card" href={`/docs/${e.id}`} style="padding:var(--sb-lg)">
+                  <h3 style="font-size:var(--sb-heading-md);margin-bottom:var(--sb-xs)">{e.data.title}</h3>
+                  <p class="muted small" style="margin:0">{e.data.description}</p>
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</Base>

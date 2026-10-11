@@ -1,0 +1,50 @@
+---
+import Icon from './Icon.astro';
+import Badge from './Badge.astro';
+import { formatCompact, formatNumber } from '../lib/format';
+import type { Model } from '../lib/api/client';
+
+interface Props {
+  models: Model[];
+  limit?: number;
+}
+const { models, limit = 10 } = Astro.props;
+
+const shown = models.slice(0, limit);
+const isFree = (m: Model) => m.tier === 'free';
+---
+
+<section class="ticker">
+  <div class="container">
+    <div class="ticker-head">
+      <h2>Market · Live</h2>
+      <span class="ticker-count">{formatNumber(models.length)} model aktif</span>
+    </div>
+    <div class="ticker-list">
+      {shown.map((m) => (
+        <a class="ticker-row" href={`/models/${encodeURIComponent(m.prefix || m.id)}`}>
+          <span class="ticker-name">
+            <b>{m.prefix || m.id}</b>
+            {m.vendor && <span class="vendor">· {m.vendor}</span>}
+          </span>
+          <span class="ticker-meta">
+            {isFree(m) && <Badge tone="free">FREE</Badge>}
+            {m.contextWindow ? <span>{formatCompact(m.contextWindow)} ctx</span> : null}
+          </span>
+        </a>
+      ))}
+    </div>
+    <p class="ticker-more">
+      <a href="/models">Lihat semua {formatNumber(models.length)} model <Icon name="arrow-right" size={14} /></a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .ticker-more a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+  }
+</style>

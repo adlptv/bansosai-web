@@ -1,0 +1,62 @@
+---
+import Base from '../layouts/Base.astro';
+import PricingTier from '../components/PricingTier.astro';
+import Button from '../components/Button.astro';
+import { getApi } from '../lib/api/server';
+import { breadcrumbJsonLd } from '../lib/seo';
+import type { Plan, PlanSlot } from '../lib/api/client';
+
+let plans: Plan[] = [];
+let slots: Record<string, PlanSlot> = {};
+try {
+  const res = await getApi().getPlans();
+  plans = (res.plans ?? []).filter((p) => p.active);
+  slots = res.slots ?? {};
+} catch {
+  plans = [];
+}
+
+// Free first, then by ascending price so the ladder reads naturally.
+const ordered = [...plans].sort((a, b) => {
+  if (a.priceIdr === 0) return -1;
+  if (b.priceIdr === 0) return 1;
+  return a.priceIdr - b.priceIdr;
+});
+---
+
+<Base
+  title="Harga — Plan Gratis & Berbayar bansosAI"
+  description="Pilih plan bansosAI sesuai kebutuhan API AI-mu: mulai gratis, lalu upgrade ke plan harian, mingguan, atau bulanan tanpa migrasi provider."
+  canonical="/pricing"
+  jsonLd={[breadcrumbJsonLd([{ name: 'Beranda', path: '/' }, { name: 'Harga', path: '/pricing' }])]}
+>
+  <main>
+    <section class="section">
+      <div class="container">
+        <header class="page-header center">
+          <h1>Harga</h1>
+          <p>Mulai gratis. Upgrade tanpa migrasi provider.</p>
+        </header>
+
+        <div class="pricing-grid">
+          {ordered.map((p) => (
+            <PricingTier plan={p} planSlot={slots[`${p.code}|${p.period}`]} featured={p.code === 'free'} />
+          ))}
+        </div>
+
+        <p class="muted small center" style="margin-top:var(--sb-xl)">
+          Semua plan memakai API key dan endpoint yang sama. Yang berubah hanya kuota, RPM, dan
+          batas concurrency.
+        </p>
+      </div>
+    </section>
+
+    <section class="cta-band">
+      <div class="container">
+        <h2>Siap membangun?</h2>
+        <p>Dapatkan API key pertama kamu dalam satu menit.</p>
+        <Button href="/register" variant="primary" size="lg">Buat API key</Button>
+      </div>
+    </section>
+  </main>
+</Base>

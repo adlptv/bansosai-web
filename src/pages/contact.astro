@@ -1,0 +1,50 @@
+---
+import Base from '../layouts/Base.astro';
+import Icon from '../components/Icon.astro';
+import { breadcrumbJsonLd } from '../lib/seo';
+---
+
+<Base
+  title="Hubungi bansosAI"
+  description="Hubungi tim bansosAI lewat Discord, email, atau kanal dukungan untuk pertanyaan teknis, penagihan, dan kerja sama."
+  canonical="/contact"
+  jsonLd={[breadcrumbJsonLd([{ name: 'Beranda', path: '/' }, { name: 'Kontak', path: '/contact' }])]}
+>
+  <main>
+    <section class="section">
+      <div class="container container-narrow">
+        <header class="page-header">
+          <h1>Hubungi Kami</h1>
+          <p>Butuh bantuan? Kami siap membantu.</p>
+        </header>
+
+        <div class="grid-2">
+          <div class="card" style="padding:var(--sb-lg)">
+            <h2 style="font-size:var(--sb-heading-md)"><Icon name="external-link" size={18} /> Discord</h2>
+            <p class="muted">
+              Cara tercepat untuk pertanyaan teknis. Komunitas dan tim kami aktif di sana setiap hari.
+            </p>
+            <a class="btn btn-ghost" href="https://discord.gg/RMrRSeHcC" target="_blank" rel="noopener noreferrer">
+              Gabung Discord
+            </a>
+          </div>
+
+          <div class="card" style="padding:var(--sb-lg)">
+            <h2 style="font-size:var(--sb-heading-md)"><Icon name="info" size={18} /> Email</h2>
+            <p class="muted">
+              Untuk urusan penagihan, kerja sama, atau hal yang perlu jejak tertulis.
+            </p>
+            <a class="btn btn-ghost" href="mailto:support@bansosai.app">support@bansosai.app</a>
+          </div>
+        </div>
+
+        <h2 style="margin-top:var(--sb-huge)">Sebelum menghubungi kami</h2>
+        <p class="muted">
+          Banyak pertanyaan sudah terjawab di <a href="/docs/faq">FAQ</a> dan
+          <a href="/docs/quickstart">Quickstart</a>. Untuk masalah API, sertakan model yang dipakai,
+          status HTTP yang diterima, dan waktu kejadian agar kami bisa menelusuri lebih cepat.
+        </p>
+      </div>
+    </section>
+  </main>
+</Base>

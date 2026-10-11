@@ -1,0 +1,34 @@
+---
+import Button from './Button.astro';
+import Typewriter from './Typewriter.astro';
+
+const phrases = ['Claude', 'GPT', 'Gemini', 'DeepSeek', 'Qwen', 'Grok'];
+---
+
+<section class="hero">
+  <div class="container">
+    <h1>Semua model AI.<br /><span class="accent">Satu API.</span></h1>
+    <p class="hero-sub">
+      Satu API key untuk akses model frontier dengan routing otomatis dan harga transparan.
+    </p>
+    <p class="hero-typed muted">
+      <Typewriter phrases={phrases} /> dan puluhan model lain — lewat endpoint yang sama.
+    </p>
+    <div class="hero-cta">
+      <Button href="/register" variant="primary" size="lg">Mulai gratis</Button>
+      <Button href="/models" variant="ghost" size="lg">Lihat model</Button>
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero-typed {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4ch;
+    min-height: 28px;
+    margin: -12px auto var(--sb-xxl);
+    font-size: var(--sb-body-md);
+  }
+</style>

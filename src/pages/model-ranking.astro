@@ -1,0 +1,115 @@
+---
+import Base from '../layouts/Base.astro';
+import { getApi } from '../lib/api/server';
+import { breadcrumbJsonLd } from '../lib/seo';
+import { formatNumber, formatPercent, formatTokens } from '../lib/format';
+import type { ModelInsight } from '../lib/api/client';
+
+const RANGES = [
+  { key: 'hour', label: '1 Jam' },
+  { key: 'day', label: 'Hari Ini' },
+  { key: 'week', label: 'Minggu Ini' },
+  { key: 'month', label: 'Bulan Ini' },
+];
+
+const rangeParam = Astro.url.searchParams.get('range') ?? 'day';
+const range = RANGES.some((r) => r.key === rangeParam) ? rangeParam : 'day';
+
+let insights: ModelInsight[] = [];
+let rangeLabel = '';
+try {
+  const res = await getApi().getModelInsights(range);
+  insights = res.models ?? [];
+  rangeLabel = res.label ?? '';
+} catch {
+  insights = [];
+}
+
+const totalRequests = insights.reduce((sum, m) => sum + m.requests, 0);
+const totalTokens = insights.reduce((sum, m) => sum + m.tokens, 0);
+const totalErrors = insights.reduce((sum, m) => sum + m.errors, 0);
+const activeModels = insights.length;
+const share = (n: number) => (totalRequests > 0 ? (n / totalRequests) * 100 : 0);
+---
+
+<Base
+  title="Peringkat Model AI — Trafik Nyata Gateway"
+  description="Peringkat model berdasarkan jumlah permintaan yang benar-benar diproses gateway bansosAI, lengkap dengan total token dan tingkat keberhasilan."
+  canonical={`/model-ranking${range !== 'day' ? `?range=${range}` : ''}`}
+  jsonLd={[
+    breadcrumbJsonLd([
+      { name: 'Beranda', path: '/' },
+      { name: 'Peringkat Model', path: '/model-ranking' },
+    ]),
+  ]}
+>
+  <main>
+    <section class="section">
+      <div class="container">
+        <header class="page-header" style="max-width:760px">
+          <h1>Peringkat Model</h1>
+          <p>
+            Peringkat model berdasarkan jumlah permintaan yang benar-benar diproses gateway. Angka
+            di bawah dihitung dari trafik nyata — bukan perkiraan — dan mencakup total token serta
+            tingkat keberhasilan tiap model.
+          </p>
+        </header>
+
+        <div class="range-tabs" role="tablist" aria-label="Rentang waktu" style="display:flex;gap:var(--sb-sm);flex-wrap:wrap;margin-bottom:var(--sb-md)">
+          {RANGES.map((r) => (
+            <a
+              href={`/model-ranking?range=${r.key}`}
+              role="tab"
+              aria-selected={r.key === range ? 'true' : 'false'}
+              class={`btn btn-sm ${r.key === range ? 'btn-primary' : 'btn-ghost'}`}
+            >{r.label}</a>
+          ))}
+        </div>
+
+        <p class="muted small" style="margin-bottom:var(--sb-xl)">
+          Periode: <b>{rangeLabel || range}</b> (WIB)
+        </p>
+
+        <div class="stat-row" style="margin-bottom:var(--sb-xl)">
+          <div class="stat"><div class="stat-value">{formatNumber(totalRequests)}</div><div class="stat-label">Total Permintaan</div></div>
+          <div class="stat"><div class="stat-value">{formatTokens(totalTokens)}</div><div class="stat-label">Total Token</div></div>
+          <div class="stat"><div class="stat-value">{formatNumber(totalErrors)}</div><div class="stat-label">Total Gagal</div></div>
+          <div class="stat"><div class="stat-value">{formatNumber(activeModels)}</div><div class="stat-label">Model Aktif</div></div>
+        </div>
+
+        <div class="table-scroll">
+          <table class="model-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Model</th>
+                <th>Permintaan</th>
+                <th>Porsi</th>
+                <th>Total Token</th>
+                <th>Berhasil</th>
+              </tr>
+            </thead>
+            <tbody>
+              {insights.map((m) => (
+                <tr>
+                  <td>{m.rank}</td>
+                  <td><a href={`/models/${encodeURIComponent(m.model)}`}>{m.model}</a></td>
+                  <td>{formatNumber(m.requests)}</td>
+                  <td>{formatPercent(share(m.requests))}</td>
+                  <td>{formatTokens(m.tokens)}</td>
+                  <td>{formatPercent(m.successRate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {insights.length === 0 && (
+          <p class="muted center" style="padding:var(--sb-huge) 0">
+            Belum ada data trafik untuk periode ini.
+          </p>
+        )}
+      </div>
+    </section>
+  </main>
+</Base>

@@ -1,0 +1,67 @@
+---
+import Button from './Button.astro';
+import Icon from './Icon.astro';
+
+const path = Astro.url.pathname;
+const links = [
+  { href: '/models', label: 'Models' },
+  { href: '/model-ranking', label: 'Ranking' },
+  { href: '/pricing', label: 'Pricing' },
+  { href: '/docs', label: 'Docs' },
+];
+---
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="nav-logo" href="/">
+      <img class="brand-mark" src="/bansosai-mark.png" alt="" width="28" height="28" />
+      bansos<span>AI</span>
+    </a>
+
+    <div class="nav-links">
+      {links.map((l) => (
+        <a href={l.href} aria-current={path === l.href || path.startsWith(`${l.href}/`) ? 'page' : undefined}>{l.label}</a>
+      ))}
+      <a href="https://discord.gg/RMrRSeHcC" target="_blank" rel="noopener noreferrer">Discord</a>
+      <a href="/login">Login</a>
+      <Button href="/register" variant="primary" size="sm">Daftar Gratis</Button>
+    </div>
+
+    <button
+      class="nav-toggle"
+      type="button"
+      aria-label="Buka menu"
+      aria-expanded="false"
+      aria-controls="nav-mobile"
+      data-nav-toggle
+    >
+      <Icon name="menu" />
+    </button>
+  </div>
+
+  <div class="nav-mobile" id="nav-mobile" data-open="false" data-nav-panel>
+    <ul>
+      {links.map((l) => (
+        <li><a href={l.href} aria-current={path === l.href || path.startsWith(`${l.href}/`) ? 'page' : undefined}>{l.label}</a></li>
+      ))}
+      <li><a href="https://discord.gg/RMrRSeHcC" target="_blank" rel="noopener noreferrer">Discord</a></li>
+      <li><a href="/login">Login</a></li>
+    </ul>
+    <div class="container" style="padding-bottom:var(--sb-lg)">
+      <Button href="/register" variant="primary" block>Daftar Gratis</Button>
+    </div>
+  </div>
+</nav>
+
+<script>
+  // Hamburger toggle for < 768px. Kept minimal: one attribute flip, no deps.
+  const toggle = document.querySelector('[data-nav-toggle]');
+  const panel = document.querySelector('[data-nav-panel]');
+  if (toggle && panel) {
+    toggle.addEventListener('click', () => {
+      const open = panel.getAttribute('data-open') === 'true';
+      panel.setAttribute('data-open', String(!open));
+      toggle.setAttribute('aria-expanded', String(!open));
+    });
+  }
+</script>

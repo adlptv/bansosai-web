@@ -1,0 +1,106 @@
+---
+import Base from '../layouts/Base.astro';
+import Icon from '../components/Icon.astro';
+
+const params = Astro.url.searchParams;
+const errorMessage = params.get('error');
+const prefillEmail = params.get('email') ?? '';
+---
+
+<Base
+  title="Daftar Gratis"
+  description="Buat akun bansosAI gratis dan dapatkan API key pertama kamu dalam satu menit — tanpa kartu kredit."
+  canonical="/register"
+  noindex
+  bare
+>
+  <div class="auth-shell">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <img class="brand-mark" src="/bansosai-mark.png" alt="" width="28" height="28" />
+        Ban<span>sos</span>AI
+      </div>
+      <h1>Daftar Gratis</h1>
+      <p class="auth-sub">Buat akun untuk mengelola API key dan pemakaian.</p>
+
+      {errorMessage && <div class="form-error" role="alert">{errorMessage}</div>}
+
+      <p class="auth-sub" style="margin-bottom:var(--sb-md)">
+        Gunakan alamat dengan domain tepat <span class="mono">gmail.com</span>,
+        <span class="mono">outlook.com</span>, atau <span class="mono">icloud.com</span>.
+        Alamat dengan tanda plus, titik pada nama, spasi, atau karakter non-ASCII tidak diterima.
+      </p>
+
+      <a class="btn btn-ghost btn-block" href="/api/oauth/google/start">
+        <Icon name="external-link" size={16} /> Daftar dengan Google
+      </a>
+
+      <p class="auth-sub" style="margin:var(--sb-md) 0 0">
+        Mendaftar lewat Google memakai alamat email akun Google itu, jadi batasan domain di atas
+        tidak berlaku untuk jalur itu.
+      </p>
+
+      <div class="auth-sep">atau email</div>
+
+      <form method="POST" action="/api/auth/register" id="register-form">
+        <div class="field">
+          <label class="label" for="register-email">Email</label>
+          <input id="register-email" class="input" type="email" name="email" required autocomplete="email" aria-describedby="email-error" value={prefillEmail} />
+          <p id="email-error" class="form-error" hidden></p>
+        </div>
+        <div class="field">
+          <label class="label" for="register-password">Password</label>
+          <input id="register-password" class="input" type="password" name="password" required minlength="8" autocomplete="new-password" />
+          <p class="muted small" style="margin:var(--sb-xs) 0 0">Minimal 8 karakter, kombinasi huruf dan angka.</p>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-block">Daftar</button>
+        </div>
+      </form>
+
+      <p class="auth-sub" style="margin:var(--sb-lg) 0 0">
+        Sudah punya akun? <a href="/login">Masuk</a>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    // Mirror the gateway's registration email policy client-side so the user
+    // gets an immediate, specific message instead of a round-trip rejection.
+    const form = document.querySelector<HTMLFormElement>('#register-form');
+    const emailEl = document.querySelector<HTMLInputElement>('#register-email');
+    const errorEl = document.querySelector<HTMLParagraphElement>('#email-error');
+    const ALLOWED = new Set(['gmail.com', 'outlook.com', 'icloud.com']);
+
+    const validate = (value: string): string => {
+      if (!value || value.length !== [...value].filter((c) => c.charCodeAt(0) <= 127).length) {
+        return 'Gunakan hanya karakter ASCII.';
+      }
+      if (/\s/.test(value)) return 'Email tidak boleh mengandung spasi.';
+      const at = value.lastIndexOf('@');
+      const local = at > 0 ? value.slice(0, at) : '';
+      const domain = at > 0 ? value.slice(at + 1) : '';
+      if (!ALLOWED.has(domain.toLowerCase())) {
+        return 'Gunakan domain tepat gmail.com, outlook.com, atau icloud.com.';
+      }
+      if (local.includes('+')) return 'Alamat dengan tanda plus tidak diterima.';
+      if (local.includes('.')) return 'Variasi titik pada nama email tidak diterima.';
+      if (!/^[^@]+@(?:gmail\.com|outlook\.com|icloud\.com)$/.test(value)) {
+        return 'Masukkan alamat email yang valid.';
+      }
+      return '';
+    };
+
+    form?.addEventListener('submit', (event) => {
+      const message = validate(emailEl?.value ?? '');
+      if (message) {
+        event.preventDefault();
+        if (errorEl) {
+          errorEl.textContent = message;
+          errorEl.hidden = false;
+        }
+        emailEl?.focus();
+      }
+    });
+  </script>
+</Base>

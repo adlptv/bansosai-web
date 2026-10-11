@@ -1,0 +1,94 @@
+/* ============================================================================
+ * bansosAI — design tokens (situs publik)
+ * ============================================================================
+ *
+ * Satu sumber token untuk seluruh situs publik. Nilainya identik dengan
+ * sb-tokens.css yang sudah tayang, supaya parity visual terjaga.
+ *
+ * Aturan inti:
+ *  - SATU warna chromatic: emerald #3ecf8e. Sisanya tangga abu-abu.
+ *  - Kanvas putih (#ffffff). Tidak ada gradient atmosferik di hero.
+ *  - Ink #171717 — near-black, TIDAK pernah hitam murni (#000).
+ *  - Teks di atas tombol emerald = near-black, BUKAN putih.
+ *  - Radius tombol 6px (kotak-ish), kartu 12px. TIDAK ada pill button.
+ *  - Display weight 500 dengan tracking negatif. Jangan naikkan ke 600+.
+ * ========================================================================== */
+
+:root {
+  /* ── Brand & accent ─────────────────────────────────────────────────── */
+  --sb-primary:      #3ecf8e; /* emerald — satu-satunya warna chromatic */
+  --sb-primary-deep: #24b47e; /* keadaan pressed */
+  --sb-primary-soft: #4ade80; /* aksen chart / UI produk */
+
+  /* Turunan emerald (alpha). Dipakai untuk focus ring dan pil item aktif,
+     supaya tidak ada nilai rgba lepas di komponen. */
+  --sb-primary-ring:  rgba(62, 207, 142, 0.18);
+  --sb-primary-tint:  rgba(62, 207, 142, 0.14);
+
+  /* Aksen langka. HANYA untuk titik chart & logo integrasi — JANGAN dipakai
+     sebagai warna sistem/state. */
+  --sb-accent-purple:  #6b01c2;
+  --sb-accent-violet:  #644fc1;
+  --sb-accent-yellow:  #ffdb13;
+  --sb-accent-tomato:  #ff2201;
+  --sb-accent-pink:    #c7007e;
+  --sb-accent-indigo:  #054cff;
+  --sb-accent-crimson: #e2005a;
+
+  /* ── Surface ────────────────────────────────────────────────────────── */
+  --sb-canvas:          #ffffff;
+  --sb-canvas-soft:     #fafafa;
+  --sb-canvas-night:    #1c1c1c;
+  --sb-canvas-night-2:  #202020;
+
+  --sb-hairline:        #dfdfdf;
+  --sb-hairline-strong: #c7c7c7;
+  --sb-hairline-cool:   #ededed;
+  --sb-hairline-cool-2: #efefef;
+  --sb-hairline-cool-3: #d4d4d4;
+
+  /* ── Text ───────────────────────────────────────────────────────────── */
+  --sb-ink:            #171717;
+  --sb-ink-secondary:  #212121;
+  --sb-ink-mute:       #707070;
+  --sb-ink-mute-2:     #9a9a9a;
+  --sb-ink-faint:      #b2b2b2;
+  --sb-on-primary:     #171717;
+  --sb-on-dark:        #ffffff;
+
+  /* ── Tipografi ──────────────────────────────────────────────────────── */
+  --sb-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --sb-font-mono: ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+
+  --sb-display-xxl: 64px;   --sb-display-xxl-ls: -1.92px;
+  --sb-display-xl:  48px;   --sb-display-xl-ls:  -1.44px;
+  --sb-display-lg:  36px;   --sb-display-lg-ls:  -0.72px;
+  --sb-display-md:  28px;   --sb-display-md-ls:  -0.42px;
+  --sb-heading-lg:  22px;
+  --sb-heading-md:  18px;
+  --sb-body-lg:     18px;
+  --sb-body-md:     16px;
+  --sb-button-md:   14px;
+  --sb-caption:     13px;
+  --sb-micro:       12px;
+  --sb-code:        14px;
+
+  /* ── Radius ─────────────────────────────────────────────────────────── */
+  --sb-r-xs:   4px;
+  --sb-r-sm:   6px;  /* tombol (tanda tangan brand), code block */
+  --sb-r-md:   8px;
+  --sb-r-lg:  12px;  /* kartu pricing/feature */
+  --sb-r-xl:  16px;
+  --sb-r-full: 9999px;
+
+  /* ── Spacing (basis 4/8px) ──────────────────────────────────────────── */
+  --sb-xxs:  2px;  --sb-xs:   4px;  --sb-sm:   8px;
+  --sb-md:  12px;  --sb-lg:  16px;  --sb-xl:  24px;
+  --sb-xxl: 32px;  --sb-huge: 64px;
+
+  /* ── Elevasi ────────────────────────────────────────────────────────── */
+  --sb-elev-0: none;
+  --sb-elev-1: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --sb-elev-2: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --sb-elev-3: 0 16px 48px rgba(0, 0, 0, 0.12);
+}

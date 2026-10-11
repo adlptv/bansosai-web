@@ -1,0 +1,156 @@
+---
+import Base from '../../layouts/Base.astro';
+import ModelCard from '../../components/ModelCard.astro';
+import ModelTable from '../../components/ModelTable.astro';
+import ModelFilterBar from '../../components/ModelFilterBar.astro';
+import { getApi } from '../../lib/api/server';
+import { breadcrumbJsonLd } from '../../lib/seo';
+import { formatNumber } from '../../lib/format';
+import type { Model } from '../../lib/api/client';
+
+let models: Model[] = [];
+try {
+  const res = await getApi().getModels();
+  models = res.models ?? [];
+} catch {
+  models = [];
+}
+
+const vendors = [...new Set(models.map((m) => m.vendor).filter(Boolean))].sort();
+const freeCount = models.filter((m) => m.tier === 'free').length;
+const premiumCount = models.length - freeCount;
+
+// Seed the filter bar from the URL so the view is shareable and crawlable.
+const params = Astro.url.searchParams;
+const seedQ = params.get('q') ?? '';
+const seedVendor = params.get('vendor') ?? '';
+const seedTier = params.get('tier') ?? '';
+const seedSort = params.get('sort') ?? 'name';
+---
+
+<Base
+  title="Bandingkan Model AI: Harga, Konteks & Kemampuan"
+  description={`Jelajahi ${formatNumber(models.length)} model AI aktif dalam satu gateway — bandingkan konteks, batas output, dan tier free/premium.`}
+  canonical="/models"
+  jsonLd={[breadcrumbJsonLd([{ name: 'Beranda', path: '/' }, { name: 'Model', path: '/models' }])]}
+>
+  <main>
+    <section class="section">
+      <div class="container">
+        <header class="page-header center" style="max-width:720px;margin-inline:auto">
+          <h1>Katalog Model</h1>
+          <p>
+            Semua model aktif dari satu gateway. Satu API key bansosAI untuk mengakses semuanya
+            sesuai paketmu.
+          </p>
+        </header>
+
+        <ModelFilterBar vendors={vendors} total={models.length} />
+
+        <p class="muted small center" style="margin-bottom:var(--sb-xl)" data-filter-summary>
+          {formatNumber(models.length)} model · {formatNumber(freeCount)} free · {formatNumber(premiumCount)} premium
+        </p>
+
+        <div class="model-grid" data-model-cards>
+          {models.map((m) => <ModelCard model={m} />)}
+        </div>
+
+        <div data-model-empty hidden>
+          <p class="muted center" style="padding:var(--sb-huge) 0">
+            Tidak ada model yang cocok dengan filter. Coba kata kunci lain.
+          </p>
+        </div>
+
+        <h2 style="margin-top:var(--sb-huge)">Tabel lengkap</h2>
+        <ModelTable models={models} />
+      </div>
+    </section>
+  </main>
+
+  <script define:vars={{ seedQ, seedVendor, seedTier, seedSort }}>
+    // Client-side filter/sort with URL query sync. No framework: reads the
+    // static markup rendered by Astro and shows/hides rows and cards.
+    const qEl = document.querySelector('[data-filter-q]');
+    const vendorEl = document.querySelector('[data-filter-vendor]');
+    const tierEl = document.querySelector('[data-filter-tier]');
+    const sortEl = document.querySelector('[data-filter-sort]');
+    const cards = Array.from(document.querySelectorAll('[data-model-cards] > *'));
+    const rows = Array.from(document.querySelectorAll('[data-model-table] [data-row]'));
+    const countEl = document.querySelector('[data-filter-count]');
+    const emptyEl = document.querySelector('[data-model-empty]');
+
+    if (qEl) qEl.value = seedQ;
+    if (vendorEl) vendorEl.value = seedVendor;
+    if (tierEl) tierEl.value = seedTier;
+    if (sortEl) sortEl.value = seedSort;
+
+    const rowMeta = new Map();
+    rows.forEach((r) => {
+      rowMeta.set(r, {
+        name: r.getAttribute('data-name') || '',
+        vendor: r.getAttribute('data-vendor') || '',
+        vendorKey: r.getAttribute('data-vendor-key') || '',
+        tier: r.getAttribute('data-tier') || '',
+        ctx: Number(r.getAttribute('data-ctx') || 0),
+      });
+    });
+
+    const apply = () => {
+      const q = (qEl?.value || '').trim().toLowerCase();
+      const vendor = vendorEl?.value || '';
+      const tier = tierEl?.value || '';
+      const sort = sortEl?.value || 'name';
+
+      const matches = (name, v, t) => {
+        if (q && !name.includes(q) && !v.toLowerCase().includes(q)) return false;
+        if (vendor && v !== vendor) return false;
+        if (tier && t !== tier) return false;
+        return true;
+      };
+
+      let shown = 0;
+      cards.forEach((card) => {
+        const link = card.querySelector('a');
+        const name = (link?.getAttribute('href') || '').replace('/models/', '').toLowerCase();
+        const vendorText = card.querySelector('.vendor')?.textContent || '';
+        const tierText = card.querySelector('.badge')?.textContent?.toLowerCase() || '';
+        const ok = matches(name, vendorText, tierText === 'free' ? 'free' : tierText);
+        card.hidden = !ok;
+        if (ok) shown += 1;
+      });
+
+      rows.forEach((r) => {
+        const meta = rowMeta.get(r);
+        r.hidden = !matches(meta.name, meta.vendor, meta.tier);
+      });
+
+      if (countEl) countEl.textContent = `${shown} model`;
+      if (emptyEl) emptyEl.hidden = shown !== 0;
+
+      // Sort rows by the chosen key.
+      const tbody = document.querySelector('[data-model-table] tbody');
+      if (tbody) {
+        const sorted = [...rows].sort((a, b) => {
+          const ma = rowMeta.get(a);
+          const mb = rowMeta.get(b);
+          if (sort === 'ctx') return mb.ctx - ma.ctx;
+          if (sort === 'vendor') return ma.vendorKey.localeCompare(mb.vendorKey) || ma.name.localeCompare(mb.name);
+          return ma.name.localeCompare(mb.name);
+        });
+        sorted.forEach((r) => tbody.appendChild(r));
+      }
+
+      // Reflect state in the URL (shareable, crawlable).
+      const url = new URL(window.location.href);
+      const set = (k, v) => (v ? url.searchParams.set(k, v) : url.searchParams.delete(k));
+      set('q', q);
+      set('vendor', vendor);
+      set('tier', tier);
+      set('sort', sort === 'name' ? '' : sort);
+      history.replaceState(null, '', url);
+    };
+
+    [qEl, vendorEl, tierEl, sortEl].forEach((el) => el?.addEventListener('input', apply));
+    apply();
+  </script>
+</Base>

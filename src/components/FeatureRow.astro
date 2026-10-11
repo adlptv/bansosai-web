@@ -1,0 +1,52 @@
+---
+import Icon from './Icon.astro';
+
+const rows = [
+  {
+    icon: 'route',
+    title: 'Routing otomatis',
+    body: 'Satu model ID, failover antar provider otomatis ke yang sehat. Tidak ada maintenance manual.',
+  },
+  {
+    icon: 'zap',
+    title: 'OpenAI-compatible',
+    body: 'Ganti base URL dan API key. SDK OpenAI yang sudah ada langsung jalan tanpa ubah kode.',
+  },
+  {
+    icon: 'shield-check',
+    title: 'Kontrol penuh',
+    body: 'API key per project, RPM limit, kuota token, dan usage tracking real-time di satu tempat.',
+  },
+  {
+    icon: 'coins',
+    title: 'Harga transparan',
+    body: 'Tarif per token tampil apa adanya. Tanpa biaya tersembunyi, tanpa markup kejutan di akhir bulan.',
+  },
+  {
+    icon: 'key',
+    title: 'Satu API key',
+    body: 'Kelola semua model lewat satu kredensial. Ganti model cukup ganti string di request.',
+  },
+  {
+    icon: 'activity',
+    title: 'Observability',
+    body: 'Pantau request, token, dan tingkat keberhasilan tiap model dari console yang sama.',
+  },
+];
+---
+
+<section class="section">
+  <div class="container">
+    <div class="feature-rows">
+      {rows.map((r) => (
+        <div class="feature-row">
+          <div class="feature-icon"><Icon name={r.icon} size={20} /></div>
+          <div>
+            <h2>{r.title}</h2>
+            <p>{r.body}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

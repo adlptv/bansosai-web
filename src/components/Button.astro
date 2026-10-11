@@ -1,0 +1,38 @@
+---
+// Button primitive. Renders an <a> when `href` is set, otherwise a <button>.
+interface Props {
+  variant?: 'primary' | 'ghost' | 'outline';
+  size?: 'sm' | 'md' | 'lg';
+  href?: string;
+  type?: 'button' | 'submit';
+  block?: boolean;
+  class?: string;
+  [key: string]: unknown;
+}
+
+const {
+  variant = 'ghost',
+  size = 'md',
+  href,
+  type = 'button',
+  block = false,
+  class: className,
+  ...rest
+} = Astro.props;
+
+const classes = [
+  'btn',
+  `btn-${variant}`,
+  size !== 'md' ? `btn-${size}` : '',
+  block ? 'btn-block' : '',
+  className ?? '',
+]
+  .filter(Boolean)
+  .join(' ');
+---
+
+{href ? (
+  <a href={href} class={classes} {...rest}><slot /></a>
+) : (
+  <button type={type} class={classes} {...rest}><slot /></button>
+)}

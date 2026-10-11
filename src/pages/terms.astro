@@ -1,0 +1,77 @@
+---
+import Base from '../layouts/Base.astro';
+import { breadcrumbJsonLd } from '../lib/seo';
+const updated = 'Oktober 2026';
+---
+
+<Base
+  title="Syarat & Ketentuan"
+  description="Aturan pemakaian layanan bansosAI: hak dan kewajiban pengguna, batasan, penagihan, dan penghentian akun."
+  canonical="/terms"
+  jsonLd={[breadcrumbJsonLd([{ name: 'Beranda', path: '/' }, { name: 'Ketentuan', path: '/terms' }])]}
+>
+  <main>
+    <section class="section">
+      <div class="container container-narrow">
+        <header class="page-header">
+          <h1>Syarat & Ketentuan</h1>
+          <p class="muted small">Terakhir diperbarui: {updated}</p>
+        </header>
+
+        <h2>Penerimaan syarat</h2>
+        <p>
+          Dengan membuat akun atau memakai layanan bansosAI, kamu menyetujui syarat ini. Bila kamu
+          tidak setuju, jangan gunakan layanan.
+        </p>
+
+        <h2>Akun kamu</h2>
+        <p>
+          Kamu bertanggung jawab menjaga kerahasiaan API key dan kredensial akunmu. Semua aktivitas
+          yang terjadi lewat key-mu dianggap sebagai aktivitasmu. Beri tahu kami segera bila kamu
+          menduga ada penyalahgunaan.
+        </p>
+
+        <h2>Pemakaian yang dilarang</h2>
+        <ul>
+          <li>Memakai layanan untuk aktivitas ilegal atau melanggar hukum yang berlaku.</li>
+          <li>Mencoba melewati batas kuota, RPM, atau kontrol keamanan lainnya.</li>
+          <li>Mengirim konten yang melanggar hak pihak lain atau membahayakan orang lain.</li>
+          <li>Menjual kembali akses tanpa izin tertulis dari kami.</li>
+        </ul>
+
+        <h2>Kuota, harga, dan penagihan</h2>
+        <p>
+          Plan gratis dan berbayar dijelaskan di <a href="/pricing">halaman harga</a>. Harga dapat
+          berubah, tetapi perubahan tidak berlaku surut untuk periode yang sudah kamu bayar. Kuota
+          direset sesuai siklus yang tertera di console.
+        </p>
+
+        <h2>Ketersediaan layanan</h2>
+        <p>
+          Kami berupaya menjaga layanan tetap tersedia, tetapi tidak menjamin bebas gangguan.
+          Routing otomatis memindahkan request antar provider saat ada gangguan, namun performa
+          akhir tetap bergantung pada provider hulu.
+        </p>
+
+        <h2>Batasan tanggung jawab</h2>
+        <p>
+          Layanan disediakan "sebagaimana adanya". Sejauh diizinkan hukum, kami tidak bertanggung
+          jawab atas kerugian tidak langsung yang timbul dari pemakaian layanan.
+        </p>
+
+        <h2>Penghentian</h2>
+        <p>
+          Kami dapat menangguhkan atau menghentikan akun yang melanggar syarat ini. Kamu dapat
+          berhenti memakai layanan kapan saja dan meminta penghapusan akun lewat
+          <a href="/contact">halaman kontak</a>.
+        </p>
+
+        <h2>Perubahan syarat</h2>
+        <p>
+          Kami dapat memperbarui syarat ini dari waktu ke waktu. Versi terbaru selalu tersedia di
+          halaman ini dengan tanggal pembaruan di atas.
+        </p>
+      </div>
+    </section>
+  </main>
+</Base>

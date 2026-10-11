@@ -1,0 +1,118 @@
+---
+import Icon from './Icon.astro';
+import type { Announcement } from '../lib/api/client';
+
+interface Props {
+  items: Announcement[];
+}
+const { items } = Astro.props;
+
+// Slideshow pengumuman dari API announcements. Dismiss bersifat klien-lokal
+// per id (kontrak redaksi backend: endpoint tidak pernah menyimpan status
+// dismiss), jadi id di sini dipakai sebagai kunci localStorage.
+const levelIcon: Record<string, string> = {
+  info: 'info',
+  success: 'check-circle',
+  warning: 'alert-triangle',
+  danger: 'alert-circle',
+};
+
+const visible = items.slice(0, 6);
+---
+
+{visible.length > 0 && (
+  <div class="banner" data-banner-root>
+    {visible.map((a, i) => (
+      <div
+        class="banner-item"
+        data-banner-item
+        data-banner-id={a.id}
+        data-dismissible={String(a.dismissible)}
+        data-level={a.level}
+        hidden={i !== 0}
+      >
+        {a.posterImage && (
+          <div class="banner-poster">
+            {a.posterLink ? (
+              <a href={a.posterLink} target="_blank" rel="noopener noreferrer">
+                <img src={`/api/announcements/poster/${encodeURIComponent(a.posterImage)}`} alt={a.title} />
+              </a>
+            ) : (
+              <img src={`/api/announcements/poster/${encodeURIComponent(a.posterImage)}`} alt={a.title} />
+            )}
+          </div>
+        )}
+        <div class="banner-inner">
+          <Icon name={levelIcon[a.level] ?? 'info'} class="banner-icon" size={20} />
+          <div class="banner-content">
+            <div class="banner-title">{a.title}</div>
+            {a.body && <p class="banner-body">{a.body}</p>}
+          </div>
+          {a.posterLink && (
+            <a class="banner-link" href={a.posterLink} target="_blank" rel="noopener noreferrer">
+              Selengkapnya
+            </a>
+          )}
+          {a.dismissible && (
+            <button class="banner-close" type="button" aria-label="Tutup pengumuman" data-banner-close>
+              <Icon name="x" size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+    ))}
+  </div>
+)}
+
+<script>
+  // Dismiss lokal + rotasi sederhana antar pengumuman.
+  const root = document.querySelector('[data-banner-root]');
+  if (root) {
+    const items = Array.from(root.querySelectorAll<HTMLElement>('[data-banner-item]'));
+    const STORE = 'bansos:dismissed-announcements';
+
+    const readDismissed = (): string[] => {
+      try {
+        const raw = localStorage.getItem(STORE);
+        return raw ? (JSON.parse(raw) as string[]) : [];
+      } catch {
+        return [];
+      }
+    };
+    const dismissed = readDismissed();
+
+    const kept = items.filter((el) => {
+      const id = el.dataset.bannerId ?? '';
+      const dismissible = el.dataset.dismissible === 'true';
+      return !(dismissible && dismissed.includes(id));
+    });
+
+    // Show the first surviving item only.
+    items.forEach((el) => el.setAttribute('hidden', ''));
+    if (kept[0]) kept[0].removeAttribute('hidden');
+    if (kept.length === 0) root.remove();
+
+    root.querySelectorAll<HTMLElement>('[data-banner-close]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const item = btn.closest<HTMLElement>('[data-banner-item]');
+        if (!item) return;
+        const id = item.dataset.bannerId ?? '';
+        const next = Array.from(new Set([...readDismissed(), id]));
+        try {
+          localStorage.setItem(STORE, JSON.stringify(next));
+        } catch {
+          /* storage disabled — dismissal just does not persist */
+        }
+        const siblings = Array.from(root.querySelectorAll<HTMLElement>('[data-banner-item]'));
+        const idx = siblings.indexOf(item);
+        item.remove();
+        const remaining = Array.from(root.querySelectorAll<HTMLElement>('[data-banner-item]'));
+        if (remaining.length === 0) {
+          root.remove();
+        } else {
+          remaining[Math.min(idx, remaining.length - 1)]?.removeAttribute('hidden');
+        }
+      });
+    });
+  }
+</script>

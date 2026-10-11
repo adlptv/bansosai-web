@@ -1,0 +1,57 @@
+---
+import Badge from './Badge.astro';
+import { formatCompact } from '../lib/format';
+import type { Model } from '../lib/api/client';
+
+interface Props {
+  models: Model[];
+}
+const { models } = Astro.props;
+const initialOf = (m: Model) => (m.vendor || m.prefix || m.id).slice(0, 1).toUpperCase();
+---
+
+<div class="table-scroll">
+  <table class="model-table" data-model-table>
+    <thead>
+      <tr>
+        <th class="sortable" data-sort="name" aria-sort="ascending">Model</th>
+        <th>Vendor</th>
+        <th class="sortable" data-sort="ctx">Konteks</th>
+        <th class="sortable" data-sort="maxout">Max output</th>
+        <th>Tier</th>
+        <th>Modalitas</th>
+      </tr>
+    </thead>
+    <tbody>
+      {models.map((m) => (
+        <tr
+          data-row
+          data-name={(m.prefix || m.id).toLowerCase()}
+          data-vendor={m.vendor}
+          data-vendor-key={m.vendor.toLowerCase()}
+          data-tier={m.tier}
+          data-ctx={m.contextWindow ?? 0}
+          data-maxout={m.maxOutputTokens ?? 0}
+        >
+          <td>
+            <span class="cell-name">
+              <span class="model-logo" aria-hidden="true">
+                {m.vendorLogo || m.logoUrl ? (
+                  <img src={m.vendorLogo || m.logoUrl} alt="" width="16" height="16" loading="lazy" />
+                ) : (
+                  <span class="vendor-initial">{initialOf(m)}</span>
+                )}
+              </span>
+              <a href={`/models/${encodeURIComponent(m.prefix || m.id)}`}>{m.prefix || m.id}</a>
+            </span>
+          </td>
+          <td>{m.vendor || '—'}</td>
+          <td>{formatCompact(m.contextWindow)}</td>
+          <td>{formatCompact(m.maxOutputTokens)}</td>
+          <td>{m.tier === 'free' ? <Badge tone="free">Free</Badge> : <Badge tone="premium">{m.tier}</Badge>}</td>
+          <td>{m.modalities?.input?.length ? m.modalities.input.join(', ') : 'Teks'}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>

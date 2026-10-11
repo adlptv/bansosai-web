@@ -1,0 +1,13 @@
+---
+// Badge primitive. `tone="free"` renders the emerald "FREE" chip.
+interface Props {
+  tone?: 'neutral' | 'free' | 'premium' | 'reasoning';
+  class?: string;
+}
+const { tone = 'neutral', class: className } = Astro.props;
+const classes = ['badge', tone !== 'neutral' ? `badge-${tone}` : '', className ?? '']
+  .filter(Boolean)
+  .join(' ');
+---
+
+<span class={classes}><slot /></span>

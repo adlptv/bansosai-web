@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /console/
+Disallow: /console
+Disallow: /api/
+Disallow: /app
+
+Sitemap: https://bansosai.app/sitemap.xml

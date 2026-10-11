@@ -1,0 +1,39 @@
+---
+import Badge from './Badge.astro';
+import { formatCompact } from '../lib/format';
+import type { Model } from '../lib/api/client';
+
+interface Props {
+  model: Model;
+}
+const { model } = Astro.props;
+const slug = encodeURIComponent(model.prefix || model.id);
+const initial = (model.vendor || model.prefix || model.id).slice(0, 1).toUpperCase();
+const logo = model.vendorLogo || model.logoUrl;
+---
+
+<a class="model-card" href={`/models/${slug}`}>
+  <div class="model-card-head">
+    <span class="model-logo">
+      {logo ? <img src={logo} alt="" width="20" height="20" loading="lazy" /> : <span class="vendor-initial">{initial}</span>}
+    </span>
+    <div class="model-card-title">
+      <h3>{model.prefix || model.id}</h3>
+      <span class="vendor">{model.vendor || 'Model'}</span>
+    </div>
+    <div class="model-card-badges">
+      {model.tier === 'free' ? <Badge tone="free">FREE</Badge> : <Badge tone="premium">{model.tier}</Badge>}
+    </div>
+  </div>
+
+  <dl class="model-specs">
+    <dt>Konteks</dt>
+    <dd>{formatCompact(model.contextWindow)}</dd>
+    <dt>Max output</dt>
+    <dd>{formatCompact(model.maxOutputTokens)}</dd>
+    <dt>Modalitas</dt>
+    <dd>{model.modalities?.input?.length ? model.modalities.input.join(', ') : 'Teks'}</dd>
+    <dt>Reasoning</dt>
+    <dd>{model.reasoning ? 'Ya' : 'Tidak'}</dd>
+  </dl>
+</a>

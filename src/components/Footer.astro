@@ -1,0 +1,63 @@
+---
+const year = new Date().getFullYear();
+const cols = [
+  {
+    title: 'Produk',
+    links: [
+      { href: '/models', label: 'Katalog model' },
+      { href: '/model-ranking', label: 'Peringkat model' },
+      { href: '/pricing', label: 'Harga' },
+      { href: '/console/', label: 'Console' },
+    ],
+  },
+  {
+    title: 'Developer',
+    links: [
+      { href: '/docs', label: 'Dokumentasi' },
+      { href: '/docs/quickstart', label: 'Quickstart' },
+      { href: '/docs/api-reference', label: 'Referensi API' },
+      { href: '/docs/models', label: 'Panduan model' },
+    ],
+  },
+  {
+    title: 'Perusahaan',
+    links: [
+      { href: '/about', label: 'Tentang' },
+      { href: '/contact', label: 'Kontak' },
+      { href: '/privacy', label: 'Privasi' },
+      { href: '/terms', label: 'Ketentuan' },
+    ],
+  },
+];
+---
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-cols">
+      <div>
+        <a class="footer-brand" href="/">
+          <img class="brand-mark" src="/bansosai-mark.png" alt="" width="24" height="24" />
+          bansos<span>AI</span>
+        </a>
+        <p class="small muted" style="margin-top:var(--sb-md);max-width:280px">
+          Satu API OpenAI-compatible untuk puluhan model frontier, dengan routing otomatis dan
+          harga transparan.
+        </p>
+      </div>
+      {cols.map((col) => (
+        <div>
+          <h3>{col.title}</h3>
+          <ul>
+            {col.links.map((l) => (
+              <li><a href={l.href}>{l.label}</a></li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+    <div class="footer-bottom">
+      <span>bansosAI — API gateway multi-model. © {year}</span>
+      <span>Dibuat untuk developer Indonesia.</span>
+    </div>
+  </div>
+</footer>

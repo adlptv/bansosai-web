@@ -1,0 +1,19 @@
+{
+  "$comment": "Brand asset manifest. Every entry is a verbatim copy of an operator-provided file; no asset is redrawn, recolored, or fetched from a third party. Source of truth: the operator's 'logo ai' folder, plus the operator-supplied BansosAI artwork.",
+  "source": "operator-provided (C:/Users/MyBook Hype AMD/Downloads/logo ai)",
+  "target": "dashboard_src/public/vendor",
+  "assets": [
+    { "vendor": "anthropic", "file": "anthropic.webp", "sourceFile": "logoclaude.webp",      "sha256": "ed51de24d88272a60903c87258db0f6c0dc0363332b34bc44972ed8bb25aea0b", "bytes": 5612 },
+    { "vendor": "deepseek",  "file": "deepseek.png",  "sourceFile": "logodeepseek.png",     "sha256": "d6c67afb9eaeb7d7f3531e65f2374d1870311d34514acb66125544d9a3a5e29e", "bytes": 160050 },
+    { "vendor": "glm",       "file": "glm.webp",      "sourceFile": "logoglm.webp",         "sha256": "971120632e4ad5460813bfdccec0740f298448de74a60cb34d13665560731f5a", "bytes": 4228 },
+    { "vendor": "google",    "file": "google.png",    "sourceFile": "gemini-color.png",     "sha256": "a04f0a8d8512ce1a90ab80a7b02fa247ce8f7dba6e4720a66351607c55adda92", "bytes": 253153 },
+    { "vendor": "grok",      "file": "grok.webp",     "sourceFile": "logogrok.webp",        "sha256": "bc2ab34b3917237789ddcb1126417f22690fd1e40f5ae40d657695dc78d29447", "bytes": 14842 },
+    { "vendor": "hyai",      "file": "hyai.png",      "sourceFile": "logohyai.png",         "sha256": "25a708b5c10c3e5ecac76607d98feeb6111fa2b9159d4e5eb3346b25428678dd", "bytes": 86919 },
+    { "vendor": "kimi",      "file": "kimi.png",      "sourceFile": "logokimi.png",         "sha256": "e3a8e58013db8171ce46fdc7b5a3661a9298fcf57a36e472d6b19002058afb77", "bytes": 3118 },
+    { "vendor": "ling",      "file": "ling.png",      "sourceFile": "logolingai.png",       "sha256": "4844167a74aa471d4176bb5e87accc8e0ef2de6cec11db517845a150777465b4", "bytes": 6831 },
+    { "vendor": "muse",      "file": "muse.jpg",      "sourceFile": "logomuse.jpg",         "sha256": "a4b5ac76ea1ca1e002d3b525fedab75039fd1df41fa0f23439c0ddae281f701b", "bytes": 2391 },
+    { "vendor": "nvidia",    "file": "nvidia.webp",   "sourceFile": "logonvidia.webp",      "sha256": "ad77e0cc65a06c13f092dd45c2fe8e643b8b69aff91d5b5f36f60e69e80986c4", "bytes": 55586 },
+    { "vendor": "qwen",      "file": "qwen.webp",     "sourceFile": "logowqen.webp",        "sha256": "2652fdc82dd622ff756566982ff884bae225c37a5a79c8b949239ed0f5319d86", "bytes": 50280 },
+    { "vendor": "xiaomi",    "file": "xiaomi.png",    "sourceFile": "logoxiaomi mimo.png",  "sha256": "e3be578b095d042349d5ffc9daa768ecc9c728e8d8bcda603abebebd746e4685", "bytes": 19128 }
+  ]
+}

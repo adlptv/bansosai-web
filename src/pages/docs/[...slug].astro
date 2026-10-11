@@ -1,0 +1,58 @@
+---
+import Base from '../../layouts/Base.astro';
+import DocsNav from '../../components/DocsNav.astro';
+import { breadcrumbJsonLd } from '../../lib/seo';
+import { getCollection, render } from 'astro:content';
+
+const { slug } = Astro.params;
+const entries = await getCollection('docs');
+const entry = entries.find((e) => e.id === slug);
+
+if (!entry) {
+  Astro.response.status = 404;
+}
+
+const { Content } = entry ? await render(entry) : { Content: null };
+---
+
+{entry && Content ? (
+  <Base
+    title={entry.data.title}
+    description={entry.data.description}
+    canonical={`/docs/${entry.id}`}
+    jsonLd={[
+      breadcrumbJsonLd([
+        { name: 'Beranda', path: '/' },
+        { name: 'Dokumentasi', path: '/docs' },
+        { name: entry.data.title, path: `/docs/${entry.id}` },
+      ]),
+    ]}
+  >
+    <main>
+      <section class="section">
+        <div class="container">
+          <div class="docs-layout">
+            <DocsNav current={entry.id} />
+            <article class="docs-body">
+              <h1>{entry.data.title}</h1>
+              <p class="muted" style="font-size:var(--sb-body-lg)">{entry.data.description}</p>
+              <Content />
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+  </Base>
+) : (
+  <Base title="Halaman tidak ditemukan" description="Halaman dokumentasi yang kamu cari tidak ada." noindex>
+    <main>
+      <section class="section">
+        <div class="container container-narrow center">
+          <h1>Halaman tidak ditemukan</h1>
+          <p class="muted">Dokumen <code>{slug}</code> tidak ada.</p>
+          <a class="btn btn-primary" href="/docs">Kembali ke dokumentasi</a>
+        </div>
+      </section>
+    </main>
+  </Base>
+)}

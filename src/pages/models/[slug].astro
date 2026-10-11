@@ -1,0 +1,124 @@
+---
+import Base from '../../layouts/Base.astro';
+import Button from '../../components/Button.astro';
+import Badge from '../../components/Badge.astro';
+import Icon from '../../components/Icon.astro';
+import { getApi } from '../../lib/api/server';
+import { modelJsonLd, breadcrumbJsonLd } from '../../lib/seo';
+import { formatCompact, formatNumber } from '../../lib/format';
+import type { Model } from '../../lib/api/client';
+
+const slug = Astro.params.slug ?? '';
+
+let models: Model[] = [];
+try {
+  const res = await getApi().getModels();
+  models = res.models ?? [];
+} catch {
+  models = [];
+}
+
+// Match on the public callable name (prefix) first, then the stable id.
+const model = models.find((m) => (m.prefix || m.id) === slug) ?? models.find((m) => m.id === slug);
+
+if (!model) {
+  Astro.response.status = 404;
+}
+
+const callable = model ? model.prefix || model.id : slug;
+const initial = (model?.vendor || callable).slice(0, 1).toUpperCase();
+const logo = model?.vendorLogo || model?.logoUrl;
+
+const curlExample = `curl https://api.bansosai.app/v1/chat/completions \\
+  -H "Authorization: Bearer $BANSOS_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "${callable}",
+    "messages": [{"role": "user", "content": "Halo!"}]
+  }'`;
+---
+
+{model ? (
+  <Base
+    title={`${callable} — Konteks, Harga & Cara Pakai`}
+    description={`${model.displayName || callable} dari ${model.vendor || 'bansosAI'}: konteks ${formatCompact(model.contextWindow)} token, output maksimum ${formatCompact(model.maxOutputTokens)}. Akses lewat API OpenAI-compatible bansosAI.`}
+    canonical={`/models/${encodeURIComponent(slug)}`}
+    ogType="product"
+    jsonLd={[
+      modelJsonLd({
+        name: model.displayName || callable,
+        description: `${model.displayName || callable} — model ${model.vendor || ''} yang bisa diakses lewat API bansosAI.`,
+        slug,
+        vendor: model.vendor,
+      }),
+      breadcrumbJsonLd([
+        { name: 'Beranda', path: '/' },
+        { name: 'Model', path: '/models' },
+        { name: callable, path: `/models/${encodeURIComponent(slug)}` },
+      ]),
+    ]}
+  >
+    <main>
+      <section class="section">
+        <div class="container container-narrow">
+          <nav class="muted small" aria-label="Breadcrumb" style="margin-bottom:var(--sb-lg)">
+            <a href="/models">Model</a> <span aria-hidden="true">/</span> <span>{callable}</span>
+          </nav>
+
+          <header class="model-card-head" style="margin-bottom:var(--sb-xl)">
+            <span class="model-logo" style="width:48px;height:48px">
+              {logo ? <img src={logo} alt="" width="28" height="28" /> : <span class="vendor-initial">{initial}</span>}
+            </span>
+            <div>
+              <h1 style="font-size:var(--sb-display-md);letter-spacing:var(--sb-display-md-ls);margin:0">{callable}</h1>
+              <p class="muted" style="margin:var(--sb-xs) 0 0">{model.displayName}{model.vendor ? ` · ${model.vendor}` : ''}</p>
+            </div>
+            <div class="model-card-badges">
+              {model.tier === 'free' ? <Badge tone="free">FREE</Badge> : <Badge tone="premium">{model.tier}</Badge>}
+              {model.reasoning ? <Badge tone="reasoning">Reasoning</Badge> : null}
+            </div>
+          </header>
+
+          <div class="table-scroll" style="margin-bottom:var(--sb-xl)">
+            <table class="model-table" style="min-width:0">
+              <tbody>
+                <tr><th scope="row">Konteks</th><td>{model.contextWindow ? `${formatNumber(model.contextWindow)} token` : '—'}</td></tr>
+                <tr><th scope="row">Max output</th><td>{model.maxOutputTokens ? `${formatNumber(model.maxOutputTokens)} token` : '—'}</td></tr>
+                <tr><th scope="row">Modalitas</th><td>{model.modalities?.input?.length ? model.modalities.input.join(', ') : 'Teks'}</td></tr>
+                <tr><th scope="row">Reasoning</th><td>{model.reasoning ? 'Ya' : 'Tidak'}</td></tr>
+                <tr><th scope="row">Tier</th><td>{model.tier}</td></tr>
+                <tr><th scope="row">Model ID</th><td class="mono">{callable}</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h2>Contoh pemakaian</h2>
+          <pre><code>{curlExample}</code></pre>
+          <p class="muted small">
+            Endpoint-nya kompatibel dengan SDK OpenAI. Ganti <code>base_url</code> ke
+            <code>https://api.bansosai.app/v1</code> dan pakai API key bansosAI.
+          </p>
+
+          <div style="display:flex;gap:var(--sb-md);flex-wrap:wrap;margin-top:var(--sb-xl)">
+            <Button href="/console/model-studio" variant="primary">
+              Coba di Playground <Icon name="arrow-right" size={14} />
+            </Button>
+            <Button href="/register" variant="ghost">Buat API key</Button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </Base>
+) : (
+  <Base title="Model tidak ditemukan" description="Model yang kamu cari tidak ada di katalog bansosAI." noindex>
+    <main>
+      <section class="section">
+        <div class="container container-narrow center">
+          <h1>Model tidak ditemukan</h1>
+          <p class="muted">Model <code>{slug}</code> tidak ada di katalog. Mungkin sudah diganti nama atau tidak lagi aktif.</p>
+          <Button href="/models" variant="primary">Lihat semua model</Button>
+        </div>
+      </section>
+    </main>
+  </Base>
+)}
