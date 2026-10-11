@@ -52,12 +52,26 @@ export function isSameOrigin(request: Request, siteUrl: string | undefined): boo
     // a cross-site form post always carries Origin in modern browsers.
     return true;
   }
+  let originHost: string;
+  try {
+    originHost = registrableHost(new URL(origin).host);
+  } catch {
+    return false;
+  }
+
+  // Same-origin against the host the request was actually sent to. The Host
+  // header is set by the proxy/browser; the adapter's request.url is NOT
+  // reliable (Astro's node adapter reports http://localhost), so it is not used
+  // for this comparison.
+  const ownHost = request.headers.get('x-forwarded-host') ?? request.headers.get('host');
+  if (ownHost && originHost === registrableHost(ownHost)) return true;
+
+  // Also accept the configured public origin, so a proxy that rewrites Host
+  // (cloudflared -> 127.0.0.1) still matches the site the browser sees.
   const publicOrigin = publicOriginFor(request, siteUrl);
   if (origin === publicOrigin) return true;
-  // Compare host, treating www.<domain> and <domain> as the same site: both are
-  // served by this app and the operator lists both as allowed origins.
   try {
-    return registrableHost(new URL(origin).host) === registrableHost(new URL(publicOrigin).host);
+    return originHost === registrableHost(new URL(publicOrigin).host);
   } catch {
     return false;
   }

@@ -118,9 +118,29 @@
 .app-topbar h1 { margin: 0; font-size: var(--sb-heading-lg); letter-spacing: -0.02em; }
 .app-topbar .topbar-sub { margin: 0; font-size: var(--sb-micro); color: var(--sb-ink-mute); }
 
-.app-topbar-nav { display: flex; gap: var(--sb-lg); margin-left: auto; }
+.app-topbar-nav { display: flex; gap: var(--sb-lg); margin-left: auto; align-items: center; }
 .app-topbar-nav a { font-size: var(--sb-caption); color: var(--sb-ink-mute); }
 .app-topbar-nav a:hover { color: var(--sb-ink); }
+
+/* Segmented Console / Tampilan-user switch for admin accounts. */
+.view-switch {
+  display: inline-flex;
+  border: 1px solid var(--sb-hairline-strong);
+  border-radius: var(--sb-r-sm);
+  overflow: hidden;
+}
+.view-switch a {
+  padding: 4px var(--sb-md);
+  font-size: var(--sb-micro);
+  font-weight: 500;
+  color: var(--sb-ink-mute);
+  background: var(--sb-canvas-raised);
+}
+.view-switch a:hover { color: var(--sb-ink); }
+.view-switch a.active {
+  background: var(--sb-primary-tint);
+  color: var(--sb-ink);
+}
 
 .sidebar-toggle {
   display: none;

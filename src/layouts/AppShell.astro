@@ -4,7 +4,7 @@
 // The nav set switches on the path: /admin/* uses the admin links, everything
 // else uses the console (app) links. The sidebar is a drawer below 1024px.
 import DashIcon from '../components/DashIcon.astro';
-import { getSessionUser, logoutEverywhere, type SessionUser } from '../lib/api/session';
+import { getSessionUser, type SessionUser } from '../lib/api/session';
 import '../styles/tokens.css';
 import '../styles/skin.css';
 import '../styles/dashboard.css';
@@ -52,6 +52,8 @@ const isActive = (href: string) => (href === '/app' || href === '/admin' ? path 
 const email = sessionUser?.email ?? 'Akun bansosAI';
 const avatar = (sessionUser?.email || 'B').trim().charAt(0).toUpperCase();
 const roleLabel = sessionUser ? (sessionUser.role === 'admin' ? 'Admin' : 'Member bansosAI') : 'AI aggregator';
+// Admins can move between the operator console and the ordinary user view.
+const isAdminUser = sessionUser?.role === 'admin';
 ---
 
 <!doctype html>
@@ -113,6 +115,20 @@ const roleLabel = sessionUser ? (sessionUser.role === 'admin' ? 'Admin' : 'Membe
             {subtitle && <p class="topbar-sub">{subtitle}</p>}
           </div>
           <nav class="app-topbar-nav">
+            {isAdminUser && (
+              <span class="view-switch" data-view-switch>
+                <a
+                  href="/console/"
+                  class={isAdmin ? 'active' : ''}
+                  title="Buka console operator"
+                >Console</a>
+                <a
+                  href="/app"
+                  class={isAdmin ? '' : 'active'}
+                  title="Lihat sebagai user biasa"
+                >Tampilan user</a>
+              </span>
+            )}
             <a href="/models">Katalog</a>
             <a href="/docs">Docs</a>
           </nav>
