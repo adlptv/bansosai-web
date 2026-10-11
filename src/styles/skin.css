@@ -754,7 +754,8 @@ table.model-table { width: 100%; min-width: 720px; border-collapse: collapse; }
 }
 .banner-close:hover { background: var(--sb-canvas-night); color: var(--sb-ink); }
 .banner-poster { display: block; max-width: 1120px; margin: 0 auto; padding: var(--sb-md) var(--sb-xl) 0; }
-.banner-poster img { width: 100%; border-radius: var(--sb-r-md); border: 1px solid var(--sb-hairline); }
+.banner-poster img,
+.banner-poster video { width: 100%; border-radius: var(--sb-r-md); border: 1px solid var(--sb-hairline); display: block; }
 
 .banner[data-level="info"]    { --banner-accent: var(--sb-status-info); }
 .banner[data-level="success"] { --banner-accent: var(--sb-status-success); }

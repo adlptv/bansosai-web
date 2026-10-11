@@ -151,6 +151,7 @@ export interface ModelInsightsResponse {
 
 export type AnnouncementLevel = 'info' | 'success' | 'warning' | 'danger';
 export type AnnouncementAudience = 'public' | 'authenticated' | 'plan';
+export type AnnouncementPlacement = 'landing' | 'dashboard' | 'both';
 
 export interface Announcement {
   id: string;
@@ -161,6 +162,7 @@ export interface Announcement {
   posterLink?: string;
   audience: AnnouncementAudience;
   planCodes: string[];
+  placement?: AnnouncementPlacement;
   startsAt?: string;
   endsAt?: string;
   dismissible: boolean;
@@ -264,7 +266,7 @@ export interface ApiClient {
   getPlans(): Promise<PlansResponse>;
   getModels(): Promise<ModelsResponse>;
   getModelInsights(range?: string): Promise<ModelInsightsResponse>;
-  getAnnouncements(token?: string): Promise<AnnouncementsResponse>;
+  getAnnouncements(token?: string, placement?: AnnouncementPlacement): Promise<AnnouncementsResponse>;
   login(email: string, password: string): Promise<LoginResponse>;
   register(email: string, password: string, turnstileToken?: string): Promise<RegisterResponse>;
   getMe(token: string): Promise<MeResponse>;
@@ -338,7 +340,11 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
       request<ModelInsightsResponse>(
         range ? `/saas/api/models/insights?range=${encodeURIComponent(range)}` : '/saas/api/models/insights',
       ),
-    getAnnouncements: (token) => request<AnnouncementsResponse>('/saas/api/announcements', { token }),
+    getAnnouncements: (token, placement) =>
+      request<AnnouncementsResponse>(
+        placement ? `/saas/api/announcements?placement=${encodeURIComponent(placement)}` : '/saas/api/announcements',
+        { token },
+      ),
     login: (email, password) =>
       request<LoginResponse>('/saas/api/login', { method: 'POST', body: { email, password } }),
     register: (email, password, turnstileToken) =>

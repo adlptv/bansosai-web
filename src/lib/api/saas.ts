@@ -202,6 +202,15 @@ async function buildProvenanceHeaders(input: {
 function bodyBytesOf(init: RequestInit): Uint8Array | undefined {
   if (init.body == null) return new Uint8Array(0);
   if (typeof init.body === 'string') return encoder.encode(init.body);
+  // The /api/console/* proxy reads the raw request body as an ArrayBuffer
+  // before forwarding it. Without these branches a POST/PATCH body would fail
+  // to produce bytes, the request would not be signed, and it would fall back
+  // to the public base instead of the internal one.
+  if (init.body instanceof Uint8Array) return init.body;
+  if (init.body instanceof ArrayBuffer) return new Uint8Array(init.body);
+  if (ArrayBuffer.isView(init.body)) {
+    return new Uint8Array(init.body.buffer, init.body.byteOffset, init.body.byteLength);
+  }
   return undefined;
 }
 

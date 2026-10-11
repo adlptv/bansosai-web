@@ -41,6 +41,28 @@
 }
 .sidebar-brand span { color: var(--sb-primary); }
 
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sb-sm);
+}
+.sidebar-collapse {
+  display: none;
+  margin-left: auto;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--sb-hairline-strong);
+  border-radius: var(--sb-r-sm);
+  background: var(--sb-canvas-raised);
+  color: var(--sb-ink-mute);
+  cursor: pointer;
+}
+.sidebar-collapse:hover { color: var(--sb-ink); border-color: var(--sb-ink-mute); }
+.sidebar-collapse .icon-collapsed { display: none; }
+
 .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
 
 .sidebar-section {
@@ -115,7 +137,8 @@
   border-bottom: 1px solid var(--sb-hairline);
   background: var(--sb-canvas);
 }
-.app-topbar h1 { margin: 0; font-size: var(--sb-heading-lg); letter-spacing: -0.02em; }
+.app-topbar > div { min-width: 0; }
+.app-topbar h1 { margin: 0; font-size: var(--sb-heading-lg); letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-topbar .topbar-sub { margin: 0; font-size: var(--sb-micro); color: var(--sb-ink-mute); }
 
 .app-topbar-nav { display: flex; gap: var(--sb-lg); margin-left: auto; align-items: center; }
@@ -227,6 +250,67 @@
 .field-row { display: flex; gap: var(--sb-md); flex-wrap: wrap; align-items: flex-end; }
 .field-row > * { min-width: 0; }
 
+/* ── Sidebar collapse (desktop) ────────────────────────────────────────────── */
+
+@media (min-width: 1024px) {
+  .app-shell { transition: grid-template-columns 0.25s ease; }
+  .sidebar { transition: width 0.25s ease; }
+  .sidebar-collapse { display: inline-flex; }
+
+  /* Collapsed: icon rail. The grid column must match the sidebar width so the
+     main pane takes the freed space. */
+  .app-shell[data-collapsed='true'] { grid-template-columns: 76px minmax(0, 1fr); }
+  .app-shell[data-collapsed='true'] .sidebar { padding-left: var(--sb-sm); padding-right: var(--sb-sm); align-items: center; }
+  .app-shell[data-collapsed='true'] .sidebar-head { justify-content: center; }
+  .app-shell[data-collapsed='true'] .sidebar-brand-text { display: none; }
+  .app-shell[data-collapsed='true'] .sidebar-collapse { margin-left: 0; }
+  .app-shell[data-collapsed='true'] .icon-expanded { display: none; }
+  .app-shell[data-collapsed='true'] .icon-collapsed { display: inline-flex; }
+
+  .app-shell[data-collapsed='true'] .sidebar-section {
+    width: 100%;
+    padding-left: 0;
+    padding-right: 0;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .app-shell[data-collapsed='true'] .nav-link { justify-content: center; padding-left: 0; padding-right: 0; }
+  .app-shell[data-collapsed='true'] .nav-link > span { display: none; }
+
+  /* Tooltip on hover when collapsed. */
+  .app-shell[data-collapsed='true'] .nav-link { position: relative; }
+  .app-shell[data-collapsed='true'] .nav-link::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 80;
+    padding: 4px 8px;
+    border: 1px solid var(--sb-hairline-strong);
+    border-radius: var(--sb-r-sm);
+    background: var(--sb-canvas-raised);
+    color: var(--sb-ink);
+    font-size: var(--sb-micro);
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+  }
+  .app-shell[data-collapsed='true'] .nav-link:hover::after { opacity: 1; }
+
+  /* User block collapses to just the avatar. */
+  .app-shell[data-collapsed='true'] .sidebar-user { flex-direction: column; gap: var(--sb-sm); padding: var(--sb-sm) 0; border: 0; background: none; }
+  .app-shell[data-collapsed='true'] .sidebar-user .who { display: none; }
+  .app-shell[data-collapsed='true'] .sidebar-user form { margin-left: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell, .sidebar { transition: none; }
+}
+
 /* ── Responsif: sidebar jadi drawer di < 1024px ────────────────────────────── */
 
 @media (max-width: 1023.98px) {
@@ -243,4 +327,13 @@
   .sidebar-toggle { display: inline-flex; }
   .sidebar-overlay { position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, 0.6); }
   .app-content, .app-topbar { padding-left: var(--sb-lg); padding-right: var(--sb-lg); }
+}
+
+/* Narrow phones: the topbar cannot fit the title plus Katalog/Docs plus the
+   view switch, so the two plain links are hidden and the title is allowed to
+   shrink. The switch stays because it is the only way to change view. */
+@media (max-width: 560px) {
+  .app-topbar-nav a { display: none; }
+  .app-topbar { gap: var(--sb-sm); }
+  .view-switch a { padding: 4px var(--sb-sm); }
 }

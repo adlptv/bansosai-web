@@ -3,8 +3,13 @@
 //
 // The nav set switches on the path: /admin/* uses the admin links, everything
 // else uses the console (app) links. The sidebar is a drawer below 1024px.
+// On desktop it can be collapsed to an icon rail; the choice is remembered in
+// localStorage so it survives navigation and reloads.
 import DashIcon from '../components/DashIcon.astro';
-import { getSessionUser, type SessionUser } from '../lib/api/session';
+import Banner from '../components/Banner.astro';
+import { getSessionUser, getToken, type SessionUser } from '../lib/api/session';
+import { getApi } from '../lib/api/server';
+import type { Announcement } from '../lib/api/client';
 import '../styles/tokens.css';
 import '../styles/skin.css';
 import '../styles/dashboard.css';
@@ -39,6 +44,7 @@ const adminLinks = [
   { href: '/admin/models', label: 'Models', icon: 'models' },
   { href: '/admin/providers', label: 'Providers', icon: 'activity' },
   { href: '/admin/usage', label: 'Usage', icon: 'usage' },
+  { href: '/admin/announcements', label: 'Banner', icon: 'megaphone' },
   { href: '/admin/settings', label: 'Settings', icon: 'settings' },
   { href: '/admin/subs', label: 'Subscriptions', icon: 'billing' },
   { href: '/admin/promos', label: 'Promos', icon: 'billing' },
@@ -54,6 +60,16 @@ const avatar = (sessionUser?.email || 'B').trim().charAt(0).toUpperCase();
 const roleLabel = sessionUser ? (sessionUser.role === 'admin' ? 'Admin' : 'Member bansosAI') : 'AI aggregator';
 // Admins can move between the operator console and the ordinary user view.
 const isAdminUser = sessionUser?.role === 'admin';
+
+// Banner untuk surface dashboard. Kegagalan API tidak boleh menjatuhkan
+// halaman, jadi banner cukup tidak tampil. Token sesi diteruskan agar audience
+// (authenticated/plan) dinilai benar; tanpa token hanya audience public lolos.
+let announcements: Announcement[] = [];
+try {
+  announcements = (await getApi().getAnnouncements(getToken(Astro), 'dashboard')).items ?? [];
+} catch {
+  announcements = [];
+}
 ---
 
 <!doctype html>
@@ -75,17 +91,34 @@ const isAdminUser = sessionUser?.role === 'admin';
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
   </head>
   <body>
-    <div class="app-shell">
+    <div class="app-shell" data-app-shell>
       <div class="sidebar-overlay" data-sidebar-overlay hidden></div>
       <aside class="sidebar" data-sidebar>
-        <a class="sidebar-brand" href="/">
-          <img class="brand-mark" src="/bansosai-mark.png" alt="" width="28" height="28" />
-          bansos<span>AI</span>
-        </a>
+        <div class="sidebar-head">
+          <a class="sidebar-brand" href="/">
+            <img class="brand-mark" src="/bansosai-mark.png" alt="" width="28" height="28" />
+            <span class="sidebar-brand-text">bansos<span>AI</span></span>
+          </a>
+          <button
+            class="sidebar-collapse"
+            type="button"
+            aria-label="Kecilkan sidebar"
+            title="Kecilkan / perbesar sidebar"
+            data-sidebar-collapse
+          >
+            <span class="icon-expanded"><DashIcon name="panel-left-close" size={18} /></span>
+            <span class="icon-collapsed"><DashIcon name="panel-left-open" size={18} /></span>
+          </button>
+        </div>
         <nav class="sidebar-nav">
           <div class="sidebar-section">{isAdmin ? 'Admin' : 'Console'}</div>
           {links.map((link) => (
-            <a href={link.href} class={`nav-link ${isActive(link.href) ? 'active' : ''}`}>
+            <a
+              href={link.href}
+              class={`nav-link ${isActive(link.href) ? 'active' : ''}`}
+              data-tip={link.label}
+              aria-label={link.label}
+            >
               <DashIcon name={link.icon} class="nav-icon" />
               <span>{link.label}</span>
             </a>
@@ -134,6 +167,8 @@ const isAdminUser = sessionUser?.role === 'admin';
           </nav>
         </header>
 
+        <Banner items={announcements} />
+
         <main class="app-content">
           <slot />
         </main>
@@ -143,9 +178,38 @@ const isAdminUser = sessionUser?.role === 'admin';
     </div>
 
     <script>
+      const shell = document.querySelector('[data-app-shell]');
       const sidebar = document.querySelector('[data-sidebar]');
       const overlay = document.querySelector('[data-sidebar-overlay]');
       const toggle = document.querySelector('[data-sidebar-toggle]');
+      const collapseBtn = document.querySelector('[data-sidebar-collapse]');
+      const KEY = 'cartethyia:sidebar-collapsed';
+
+      // Desktop collapse: remember the choice so it survives reloads. Applied
+      // before paint (script is inline and runs after the shell markup) so the
+      // rail width does not flash the expanded state.
+      const applyCollapsed = (collapsed: boolean) => {
+        shell?.setAttribute('data-collapsed', String(collapsed));
+        collapseBtn?.setAttribute('aria-expanded', String(!collapsed));
+      };
+      let collapsed = false;
+      try {
+        collapsed = localStorage.getItem(KEY) === 'true';
+      } catch {
+        /* storage disabled — start expanded */
+      }
+      applyCollapsed(collapsed);
+      collapseBtn?.addEventListener('click', () => {
+        collapsed = shell?.getAttribute('data-collapsed') !== 'true';
+        applyCollapsed(collapsed);
+        try {
+          localStorage.setItem(KEY, String(collapsed));
+        } catch {
+          /* storage disabled — collapse just does not persist */
+        }
+      });
+
+      // Mobile drawer.
       const setOpen = (open: boolean) => {
         sidebar?.setAttribute('data-open', String(open));
         if (overlay) (overlay as HTMLElement).hidden = !open;

@@ -1,0 +1,415 @@
+---
+// /admin/announcements — CRUD banner/pengumuman (create/edit/delete) backed by
+// /api/console/announcements. Poster (gambar atau video pendek) diunggah ke
+// /api/console/announcements/poster lalu nama berkasnya dipasang ke pengumuman.
+//
+// Field mengikuti kontrak gateway (announcementInput): title, body, level,
+// audience, planCodes, placement, startsAt, endsAt, dismissible, active,
+// sortOrder, posterImage, posterLink.
+import AppShell from '../../layouts/AppShell.astro';
+import { requireAdminPage } from '../../lib/api/admin';
+import { getSessionUser } from '../../lib/api/session';
+
+const gate = await requireAdminPage(Astro);
+if (gate) return gate;
+
+const user = await getSessionUser(Astro);
+---
+
+<AppShell title="Banner" subtitle="Kelola pengumuman yang tampil di landing page dan/atau dashboard." user={user}>
+  <div data-last-updated style="font-size:12px;color:var(--sb-ink-mute);margin-bottom:16px;"></div>
+  <div id="load-err"></div>
+
+  <div id="admin-content">
+    <div class="card" style="margin-bottom:24px;">
+      <h3 id="form-title" style="margin-bottom:16px;">Buat Banner</h3>
+      <form id="banner-form">
+        <input type="hidden" id="banner-id" />
+        <input type="hidden" id="banner-poster-image" />
+
+        <div class="form-grid">
+          <div>
+            <label class="label">Judul <span style="color:var(--sb-status-danger)">*</span></label>
+            <input class="input" id="banner-title" placeholder="Promo akhir bulan" required />
+          </div>
+          <div>
+            <label class="label">Level</label>
+            <select class="input" id="banner-level">
+              <option value="info">Info</option>
+              <option value="success">Sukses</option>
+              <option value="warning">Peringatan</option>
+              <option value="danger">Penting</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Tampil di</label>
+            <select class="input" id="banner-placement">
+              <option value="both">Landing + Dashboard</option>
+              <option value="landing">Landing page saja</option>
+              <option value="dashboard">Dashboard saja</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Urutan</label>
+            <input class="input" id="banner-sort" type="number" value="0" />
+          </div>
+          <div style="grid-column:1 / -1;">
+            <label class="label">Isi <span style="color:var(--sb-status-danger)">*</span></label>
+            <textarea class="input" id="banner-body" rows="3" placeholder="Tulis isi pengumuman…" required></textarea>
+          </div>
+          <div>
+            <label class="label">Audiens</label>
+            <select class="input" id="banner-audience">
+              <option value="public">Semua pengunjung</option>
+              <option value="authenticated">Pengguna login</option>
+              <option value="plan">Pemilik plan tertentu</option>
+            </select>
+          </div>
+          <div id="plan-codes-wrap" style="display:none;">
+            <label class="label">Kode Plan (pisahkan dengan koma)</label>
+            <input class="input" id="banner-plan-codes" placeholder="pro, monthly" />
+          </div>
+          <div>
+            <label class="label">Mulai (opsional)</label>
+            <input class="input" id="banner-starts" type="datetime-local" />
+          </div>
+          <div>
+            <label class="label">Berakhir (opsional)</label>
+            <input class="input" id="banner-ends" type="datetime-local" />
+          </div>
+          <div>
+            <label class="label">Link saat banner diklik (opsional)</label>
+            <input class="input" id="banner-link" placeholder="https://…" />
+          </div>
+          <div>
+            <label class="label">Status</label>
+            <div style="display:flex;gap:16px;align-items:center;padding-top:8px;">
+              <label style="display:flex;gap:8px;align-items:center;font-size:var(--sb-caption);">
+                <input type="checkbox" id="banner-active" checked /> Aktif
+              </label>
+              <label style="display:flex;gap:8px;align-items:center;font-size:var(--sb-caption);">
+                <input type="checkbox" id="banner-dismissible" checked /> Bisa ditutup
+              </label>
+            </div>
+          </div>
+          <div style="grid-column:1 / -1;">
+            <label class="label">Poster / Media (PNG, JPG, WebP, GIF, MP4, WebM — maks 32 MB)</label>
+            <input class="input" id="banner-poster-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm" />
+            <div id="poster-status" class="muted" style="font-size:12px;margin-top:6px;"></div>
+            <div id="poster-preview" style="margin-top:10px;"></div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="save-btn">Simpan</button>
+          <button type="button" class="btn btn-ghost" id="cancel-btn" style="display:none;">Batal</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-bottom:16px;">Daftar Banner</h3>
+      <div id="banners-wrap"><p class="muted">Memuat…</p></div>
+    </div>
+  </div>
+</AppShell>
+
+<script is:inline src="/js/admin-session.js"></script>
+<script is:inline>
+  let token = window.adminSession.get();
+  let allBanners = [];
+  let currentPoster = '';
+
+  const byId = (id) => document.getElementById(id);
+
+  function headers() {
+    return { 'content-type': 'application/json', 'authorization': 'Bearer ' + token };
+  }
+  function authHeaders() {
+    return { 'authorization': 'Bearer ' + token };
+  }
+  function handle401() {
+    window.adminSession.clear();
+    token = '';
+    window.location.href = '/login?err=' + encodeURIComponent('Sesi admin berakhir, login ulang.');
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // ── Audience → plan codes visibility ──────────────────────────────────────
+  byId('banner-audience').addEventListener('change', function () {
+    byId('plan-codes-wrap').style.display = this.value === 'plan' ? '' : 'none';
+  });
+
+  // ── Poster upload ─────────────────────────────────────────────────────────
+  byId('banner-poster-file').addEventListener('change', async function () {
+    const file = this.files && this.files[0];
+    if (!file) return;
+    const status = byId('poster-status');
+    status.textContent = 'Mengunggah ' + file.name + '…';
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const resp = await fetch('/api/console/announcements/poster', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: fd,
+      });
+      if (resp.status === 401) { handle401(); return; }
+      const data = await resp.json().catch(function () { return {}; });
+      if (!resp.ok) {
+        status.textContent = '';
+        alert((data && data.error && data.error.message) || 'Gagal mengunggah poster');
+        return;
+      }
+      currentPoster = data.posterImage || '';
+      byId('banner-poster-image').value = currentPoster;
+      status.textContent = 'Terunggah: ' + currentPoster + ' (' + Math.round((data.bytes || 0) / 1024) + ' KB)';
+      renderPosterPreview(currentPoster);
+    } catch (e) {
+      status.textContent = '';
+      alert('Error: ' + e.message);
+    }
+  });
+
+  function renderPosterPreview(name) {
+    const wrap = byId('poster-preview');
+    if (!name) { wrap.innerHTML = ''; return; }
+    const src = '/api/announcements/poster/' + encodeURIComponent(name);
+    const isVideo = /\.(mp4|webm)$/i.test(name);
+    wrap.innerHTML = isVideo
+      ? '<video src="' + src + '" controls muted style="max-width:320px;border-radius:12px;border:1px solid var(--sb-hairline);"></video>' +
+        '<div style="margin-top:6px;"><button type="button" class="btn btn-ghost btn-sm" id="poster-clear">Hapus poster</button></div>'
+      : '<img src="' + src + '" alt="preview" style="max-width:320px;border-radius:12px;border:1px solid var(--sb-hairline);display:block;" />' +
+        '<div style="margin-top:6px;"><button type="button" class="btn btn-ghost btn-sm" id="poster-clear">Hapus poster</button></div>';
+    const clear = byId('poster-clear');
+    if (clear) clear.addEventListener('click', function () {
+      currentPoster = '';
+      byId('banner-poster-image').value = '';
+      byId('banner-poster-file').value = '';
+      byId('poster-status').textContent = '';
+      renderPosterPreview('');
+    });
+  }
+
+  // ── List ──────────────────────────────────────────────────────────────────
+  async function loadBanners() {
+    try {
+      const resp = await fetch('/api/console/announcements', { headers: headers() });
+      if (resp.status === 401) { handle401(); return; }
+      if (!resp.ok) return;
+      const data = await resp.json();
+      allBanners = data.items ?? data.announcements ?? [];
+      renderBanners();
+      const el = document.querySelector('[data-last-updated]');
+      if (el) el.textContent = 'Terakhir diperbarui: ' + new Date().toLocaleTimeString('id-ID');
+    } catch (e) {
+      byId('load-err').innerHTML = '<div class="flash flash-err">Gagal memuat banner: ' + esc(e.message) + '</div>';
+    }
+  }
+
+  const levelPill = { info: 'pill-info', success: 'pill-ok', warning: 'pill-warn', danger: 'pill-err' };
+  const placementLabel = { landing: 'Landing', dashboard: 'Dashboard', both: 'Landing + Dashboard' };
+
+  function renderBanners() {
+    const wrap = byId('banners-wrap');
+    if (!allBanners.length) {
+      wrap.innerHTML = '<p class="muted">Belum ada banner. Buat di form atas.</p>';
+      return;
+    }
+    wrap.innerHTML = '<div class="table-wrap"><table class="table">' +
+      '<thead><tr><th>Judul</th><th>Level</th><th>Tampil di</th><th>Audiens</th><th>Poster</th><th>Urutan</th><th>Status</th><th>Aksi</th></tr></thead>' +
+      '<tbody>' + allBanners.map(function (b) {
+        const poster = b.posterImage
+          ? '<span class="pill pill-ok">Ada</span>'
+          : '<span class="muted">—</span>';
+        const audience = b.audience === 'plan'
+          ? 'plan: ' + (b.planCodes || []).join(', ')
+          : b.audience;
+        return '<tr data-id="' + esc(b.id) + '">' +
+          '<td><b>' + esc(b.title) + '</b><div class="muted" style="font-size:12px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(b.body) + '</div></td>' +
+          '<td><span class="pill ' + (levelPill[b.level] || 'pill-info') + '">' + esc(b.level) + '</span></td>' +
+          '<td>' + esc(placementLabel[b.placement] || b.placement || 'Landing + Dashboard') + '</td>' +
+          '<td>' + esc(audience) + '</td>' +
+          '<td>' + poster + '</td>' +
+          '<td>' + (b.sortOrder ?? 0) + '</td>' +
+          '<td>' + (b.active ? '<span class="pill pill-ok">Aktif</span>' : '<span class="pill pill-err">Nonaktif</span>') + '</td>' +
+          '<td style="white-space:nowrap;">' +
+            '<button class="btn btn-ghost btn-sm toggle-active" data-id="' + esc(b.id) + '">' + (b.active ? 'Nonaktifkan' : 'Aktifkan') + '</button>' +
+            '<button class="btn btn-ghost btn-sm edit-btn" data-id="' + esc(b.id) + '" style="margin-left:4px;">Edit</button>' +
+            '<button class="btn btn-danger btn-sm delete-btn" data-id="' + esc(b.id) + '" style="margin-left:4px;">Hapus</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table></div>';
+
+    wrap.querySelectorAll('.edit-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () { editBanner(btn.dataset.id); });
+    });
+    wrap.querySelectorAll('.delete-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () { deleteBanner(btn.dataset.id); });
+    });
+    wrap.querySelectorAll('.toggle-active').forEach(function (btn) {
+      btn.addEventListener('click', function () { toggleActive(btn.dataset.id); });
+    });
+  }
+
+  // RFC3339 (UTC) → nilai untuk <input type="datetime-local"> di zona lokal.
+  function toLocalInput(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  }
+
+  function editBanner(id) {
+    const b = allBanners.find(function (x) { return x.id === id; });
+    if (!b) return;
+    byId('banner-id').value = b.id;
+    byId('banner-title').value = b.title || '';
+    byId('banner-body').value = b.body || '';
+    byId('banner-level').value = b.level || 'info';
+    byId('banner-placement').value = b.placement || 'both';
+    byId('banner-sort').value = b.sortOrder ?? 0;
+    byId('banner-audience').value = b.audience || 'public';
+    byId('banner-plan-codes').value = (b.planCodes || []).join(', ');
+    byId('plan-codes-wrap').style.display = b.audience === 'plan' ? '' : 'none';
+    byId('banner-starts').value = toLocalInput(b.startsAt);
+    byId('banner-ends').value = toLocalInput(b.endsAt);
+    byId('banner-link').value = b.posterLink || '';
+    byId('banner-active').checked = b.active !== false;
+    byId('banner-dismissible').checked = b.dismissible !== false;
+    currentPoster = b.posterImage || '';
+    byId('banner-poster-image').value = currentPoster;
+    byId('banner-poster-file').value = '';
+    byId('poster-status').textContent = currentPoster ? 'Poster saat ini: ' + currentPoster : '';
+    renderPosterPreview(currentPoster);
+    byId('form-title').textContent = 'Edit Banner';
+    byId('save-btn').textContent = 'Update';
+    byId('cancel-btn').style.display = 'inline-block';
+    window.scrollTo(0, 0);
+  }
+
+  function resetForm() {
+    byId('banner-form').reset();
+    byId('banner-id').value = '';
+    byId('banner-poster-image').value = '';
+    byId('banner-sort').value = 0;
+    byId('banner-active').checked = true;
+    byId('banner-dismissible').checked = true;
+    byId('plan-codes-wrap').style.display = 'none';
+    currentPoster = '';
+    byId('poster-status').textContent = '';
+    renderPosterPreview('');
+    byId('form-title').textContent = 'Buat Banner';
+    byId('save-btn').textContent = 'Simpan';
+    byId('cancel-btn').style.display = 'none';
+  }
+
+  async function toggleActive(id) {
+    const b = allBanners.find(function (x) { return x.id === id; });
+    if (!b) return;
+    try {
+      const resp = await fetch('/api/console/announcements/' + encodeURIComponent(id), {
+        method: 'PATCH',
+        headers: headers(),
+        body: JSON.stringify({ active: !(b.active !== false) }),
+      });
+      if (resp.status === 401) { handle401(); return; }
+      if (resp.ok) loadBanners();
+      else {
+        const data = await resp.json().catch(function () { return {}; });
+        alert((data && data.error && data.error.message) || 'Gagal mengubah status');
+      }
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+
+  async function deleteBanner(id) {
+    const b = allBanners.find(function (x) { return x.id === id; });
+    if (!confirm('Hapus banner "' + (b ? b.title : id) + '"? Tindakan ini tidak bisa dibatalkan.')) return;
+    try {
+      const resp = await fetch('/api/console/announcements/' + encodeURIComponent(id), {
+        method: 'DELETE',
+        headers: headers(),
+      });
+      if (resp.status === 401) { handle401(); return; }
+      if (resp.ok) loadBanners();
+      else {
+        const data = await resp.json().catch(function () { return {}; });
+        alert((data && data.error && data.error.message) || 'Gagal menghapus banner');
+      }
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+
+  // ── Save ──────────────────────────────────────────────────────────────────
+  byId('banner-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const id = byId('banner-id').value;
+    const title = byId('banner-title').value.trim();
+    const body = byId('banner-body').value.trim();
+    if (!title) { alert('Judul wajib diisi'); return; }
+    if (!body) { alert('Isi pengumuman wajib diisi'); return; }
+
+    const audience = byId('banner-audience').value;
+    const planCodes = byId('banner-plan-codes').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    if (audience === 'plan' && planCodes.length === 0) {
+      alert('Audiens "plan" butuh minimal satu kode plan.');
+      return;
+    }
+
+    const startsLocal = byId('banner-starts').value;
+    const endsLocal = byId('banner-ends').value;
+    const startsAt = startsLocal ? new Date(startsLocal).toISOString() : '';
+    const endsAt = endsLocal ? new Date(endsLocal).toISOString() : '';
+    if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
+      alert('Waktu berakhir harus setelah waktu mulai.');
+      return;
+    }
+
+    const payload = {
+      title: title,
+      body: body,
+      level: byId('banner-level').value,
+      placement: byId('banner-placement').value,
+      audience: audience,
+      planCodes: audience === 'plan' ? planCodes : [],
+      sortOrder: parseInt(byId('banner-sort').value, 10) || 0,
+      dismissible: byId('banner-dismissible').checked,
+      active: byId('banner-active').checked,
+      posterImage: currentPoster || '',
+      posterLink: byId('banner-link').value.trim() || '',
+    };
+    // startsAt/endsAt memakai flag Set* supaya bisa dikosongkan saat edit.
+    if (startsAt) { payload.startsAt = startsAt; } else { payload.setStartsAt = true; payload.startsAt = ''; }
+    if (endsAt) { payload.endsAt = endsAt; } else { payload.setEndsAt = true; payload.endsAt = ''; }
+
+    const url = id ? '/api/console/announcements/' + encodeURIComponent(id) : '/api/console/announcements';
+    const method = id ? 'PATCH' : 'POST';
+    const btn = byId('save-btn');
+    btn.setAttribute('disabled', 'true');
+    try {
+      const resp = await fetch(url, { method: method, headers: headers(), body: JSON.stringify(payload) });
+      if (resp.status === 401) { handle401(); return; }
+      if (resp.ok) {
+        resetForm();
+        loadBanners();
+      } else {
+        const data = await resp.json().catch(function () { return {}; });
+        alert((data && data.error && data.error.message) || 'Gagal menyimpan banner');
+      }
+    } catch (e) { alert('Error: ' + e.message); }
+    btn.removeAttribute('disabled');
+  });
+
+  byId('cancel-btn').addEventListener('click', resetForm);
+
+  // Guard: reaching here means the page was gated server-side.
+  if (!token) {
+    window.location.href = '/login?err=' + encodeURIComponent('Sesi admin tidak ditemukan, login ulang.');
+  } else {
+    loadBanners();
+    setInterval(loadBanners, 30000);
+  }
+</script>

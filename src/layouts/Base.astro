@@ -46,7 +46,7 @@ const meta = buildMeta({
 // the page down, so the banner simply does not render.
 let announcements: Announcement[] = [];
 try {
-  const res = await getApi().getAnnouncements();
+  const res = await getApi().getAnnouncements(undefined, 'landing');
   announcements = res.items ?? [];
 } catch {
   announcements = [];

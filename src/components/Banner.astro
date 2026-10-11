@@ -18,6 +18,11 @@ const levelIcon: Record<string, string> = {
 };
 
 const visible = items.slice(0, 6);
+
+// Poster bisa berupa gambar atau video pendek. Ekstensi menentukan elemen mana
+// yang dipakai: <video> untuk mp4/webm, selain itu <img>. Konten sudah
+// divalidasi di gateway (magic-byte), jadi di sini cukup memilih tag.
+const isVideoPoster = (name?: string) => !!name && /\.(mp4|webm)$/i.test(name);
 ---
 
 {visible.length > 0 && (
@@ -33,13 +38,19 @@ const visible = items.slice(0, 6);
       >
         {a.posterImage && (
           <div class="banner-poster">
-            {a.posterLink ? (
-              <a href={a.posterLink} target="_blank" rel="noopener noreferrer">
-                <img src={`/api/announcements/poster/${encodeURIComponent(a.posterImage)}`} alt={a.title} />
-              </a>
-            ) : (
-              <img src={`/api/announcements/poster/${encodeURIComponent(a.posterImage)}`} alt={a.title} />
-            )}
+            {(() => {
+              const src = `/api/announcements/poster/${encodeURIComponent(a.posterImage)}`;
+              const media = isVideoPoster(a.posterImage) ? (
+                <video src={src} autoplay muted loop playsinline aria-label={a.title}></video>
+              ) : (
+                <img src={src} alt={a.title} />
+              );
+              return a.posterLink ? (
+                <a href={a.posterLink} target="_blank" rel="noopener noreferrer">{media}</a>
+              ) : (
+                media
+              );
+            })()}
           </div>
         )}
         <div class="banner-inner">
