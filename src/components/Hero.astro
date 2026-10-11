@@ -11,8 +11,8 @@ const phrases = ['Claude', 'GPT', 'Gemini', 'DeepSeek', 'Qwen', 'Grok'];
     <p class="hero-sub">
       Satu API key untuk akses model frontier dengan routing otomatis dan harga transparan.
     </p>
-    <p class="hero-typed muted">
-      <Typewriter phrases={phrases} /> dan puluhan model lain — lewat endpoint yang sama.
+    <p class="hero-typed">
+      <span class="muted">Akses</span>&nbsp;<Typewriter phrases={phrases} />&nbsp;<span class="muted">dan puluhan model lain — lewat endpoint yang sama.</span>
     </p>
     <div class="hero-cta">
       <Button href="/register" variant="primary" size="lg">Mulai gratis</Button>
@@ -22,13 +22,16 @@ const phrases = ['Claude', 'GPT', 'Gemini', 'DeepSeek', 'Qwen', 'Grok'];
 </section>
 
 <style>
+  /* min-height menahan tinggi baris supaya mengetik/menghapus tidak menggeser
+     tombol CTA di bawahnya. */
   .hero-typed {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: center;
-    gap: 0.4ch;
+    flex-wrap: wrap;
+    gap: 0.35ch;
     min-height: 28px;
-    margin: -12px auto var(--sb-xxl);
+    margin: 0 auto var(--sb-xl);
     font-size: var(--sb-body-md);
   }
 </style>

@@ -2,19 +2,21 @@
  * bansosAI — design tokens (situs publik)
  * ============================================================================
  *
- * Satu sumber token untuk seluruh situs publik. Nilainya identik dengan
- * sb-tokens.css yang sudah tayang, supaya parity visual terjaga.
+ * Tema gelap: kanvas hitam, ink putih. Satu warna chromatic (emerald #3ecf8e)
+ * tetap menjadi aksen tunggal; sisanya tangga abu-abu.
  *
  * Aturan inti:
- *  - SATU warna chromatic: emerald #3ecf8e. Sisanya tangga abu-abu.
- *  - Kanvas putih (#ffffff). Tidak ada gradient atmosferik di hero.
- *  - Ink #171717 — near-black, TIDAK pernah hitam murni (#000).
- *  - Teks di atas tombol emerald = near-black, BUKAN putih.
+ *  - Kanvas #000000 (hitam). Permukaan bertingkat memakai hitam-soft.
+ *  - Ink #ffffff — teks utama di atas hitam, bukan abu.
+ *  - Teks di atas tombol emerald = near-black (kontras 8.9:1).
  *  - Radius tombol 6px (kotak-ish), kartu 12px. TIDAK ada pill button.
  *  - Display weight 500 dengan tracking negatif. Jangan naikkan ke 600+.
+ *  - TIDAK ada gradient atmosferik di hero.
  * ========================================================================== */
 
 :root {
+  color-scheme: dark;
+
   /* ── Brand & accent ─────────────────────────────────────────────────── */
   --sb-primary:      #3ecf8e; /* emerald — satu-satunya warna chromatic */
   --sb-primary-deep: #24b47e; /* keadaan pressed */
@@ -22,39 +24,51 @@
 
   /* Turunan emerald (alpha). Dipakai untuk focus ring dan pil item aktif,
      supaya tidak ada nilai rgba lepas di komponen. */
-  --sb-primary-ring:  rgba(62, 207, 142, 0.18);
-  --sb-primary-tint:  rgba(62, 207, 142, 0.14);
+  --sb-primary-ring:  rgba(62, 207, 142, 0.28);
+  --sb-primary-tint:  rgba(62, 207, 142, 0.16);
+
+  /* Warna status banner. Fungsional (info/success/warning/danger), bukan
+     dekorasi: pada kanvas hitam versi gelap dari hue ini harus terbaca. */
+  --sb-status-info:    #60a5fa;
+  --sb-status-success: #3ecf8e;
+  --sb-status-warning: #ffdb13;
+  --sb-status-danger:  #ff6b5e;
 
   /* Aksen langka. HANYA untuk titik chart & logo integrasi — JANGAN dipakai
      sebagai warna sistem/state. */
-  --sb-accent-purple:  #6b01c2;
-  --sb-accent-violet:  #644fc1;
+  --sb-accent-purple:  #a78bfa;
+  --sb-accent-violet:  #a78bfa;
   --sb-accent-yellow:  #ffdb13;
-  --sb-accent-tomato:  #ff2201;
-  --sb-accent-pink:    #c7007e;
-  --sb-accent-indigo:  #054cff;
-  --sb-accent-crimson: #e2005a;
+  --sb-accent-tomato:  #ff6b5e;
+  --sb-accent-pink:    #f472b6;
+  --sb-accent-indigo:  #60a5fa;
+  --sb-accent-crimson: #fb7185;
 
   /* ── Surface ────────────────────────────────────────────────────────── */
-  --sb-canvas:          #ffffff;
-  --sb-canvas-soft:     #fafafa;
-  --sb-canvas-night:    #1c1c1c;
-  --sb-canvas-night-2:  #202020;
+  --sb-canvas:          #000000; /* hitam — kanvas utama */
+  --sb-canvas-soft:     #0a0a0a; /* band section bergantian */
+  --sb-canvas-raised:   #111111; /* kartu, panel, nav */
+  --sb-canvas-night:    #161616; /* code block (lebih terang dari kartu) */
+  --sb-canvas-night-2:  #1c1c1c;
 
-  --sb-hairline:        #dfdfdf;
-  --sb-hairline-strong: #c7c7c7;
-  --sb-hairline-cool:   #ededed;
-  --sb-hairline-cool-2: #efefef;
-  --sb-hairline-cool-3: #d4d4d4;
+  --sb-hairline:        #1f1f1f;
+  --sb-hairline-strong: #2e2e2e;
+  --sb-hairline-cool:   #191919;
+  --sb-hairline-cool-2: #141414;
+  --sb-hairline-cool-3: #333333;
 
   /* ── Text ───────────────────────────────────────────────────────────── */
-  --sb-ink:            #171717;
-  --sb-ink-secondary:  #212121;
-  --sb-ink-mute:       #707070;
-  --sb-ink-mute-2:     #9a9a9a;
-  --sb-ink-faint:      #b2b2b2;
-  --sb-on-primary:     #171717;
+  --sb-ink:            #ffffff;
+  --sb-ink-secondary:  #ededed;
+  --sb-ink-mute:       #a3a3a3; /* ≥7:1 di atas hitam */
+  --sb-ink-mute-2:     #8a8a8a;
+  --sb-ink-faint:      #707070; /* placeholder/disabled */
+  --sb-on-primary:     #0a0a0a; /* teks di atas emerald — near-black */
   --sb-on-dark:        #ffffff;
+
+  /* Logo vendor berwarna penuh di atas transparan. Di kanvas hitam, logo gelap
+     hilang, jadi tiap logo duduk di tile terang tersendiri (chip brand). */
+  --sb-logo-tile:      #f2f2f2;
 
   /* ── Tipografi ──────────────────────────────────────────────────────── */
   --sb-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -87,8 +101,10 @@
   --sb-xxl: 32px;  --sb-huge: 64px;
 
   /* ── Elevasi ────────────────────────────────────────────────────────── */
+  /* Di atas hitam, bayangan gelap tidak terlihat; batas antar permukaan
+     dibawa oleh hairline, bukan drop shadow. */
   --sb-elev-0: none;
-  --sb-elev-1: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --sb-elev-2: 0 8px 24px rgba(0, 0, 0, 0.08);
-  --sb-elev-3: 0 16px 48px rgba(0, 0, 0, 0.12);
+  --sb-elev-1: 0 1px 2px rgba(0, 0, 0, 0.6);
+  --sb-elev-2: 0 8px 24px rgba(0, 0, 0, 0.7);
+  --sb-elev-3: 0 16px 48px rgba(0, 0, 0, 0.8);
 }
