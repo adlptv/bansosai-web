@@ -1,0 +1,7 @@
+---
+// /admin/login — the pre-rebuild console had no standalone login form here:
+// the page immediately bounced the visitor to the SaaS login with an error
+// message. Reproduced faithfully (302 redirect, same message).
+const redirect = '/login?err=' + encodeURIComponent('Login dahulu dengan akun admin bansosAI.');
+return Astro.redirect(redirect, 302);
+---

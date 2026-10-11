@@ -205,7 +205,7 @@ export interface DashboardResponse {
 }
 
 export interface UsageDay {
-  day: string;
+  date: string;
   tokens: number;
   [key: string]: unknown;
 }

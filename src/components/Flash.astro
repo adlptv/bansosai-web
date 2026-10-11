@@ -1,0 +1,31 @@
+---
+// Flash banner for success/error/info messages. Reads `kind` and `message`.
+interface Props {
+  kind?: 'ok' | 'err' | 'info';
+  message: string;
+}
+const { kind = 'info', message } = Astro.props;
+const tone: Record<string, string> = { ok: 'ok', err: 'err', info: 'info' };
+---
+
+{message && (
+  <div class="flash" data-kind={tone[kind] ?? 'info'} role="status">
+    {message}
+  </div>
+)}
+
+<style>
+  .flash {
+    margin-bottom: var(--sb-lg);
+    padding: var(--sb-md) var(--sb-lg);
+    border: 1px solid var(--sb-hairline-strong);
+    border-left-width: 3px;
+    border-radius: var(--sb-r-sm);
+    background: var(--sb-canvas-raised);
+    color: var(--sb-ink);
+    font-size: var(--sb-caption);
+  }
+  .flash[data-kind='ok'] { border-left-color: var(--sb-status-success); }
+  .flash[data-kind='err'] { border-left-color: var(--sb-status-danger); }
+  .flash[data-kind='info'] { border-left-color: var(--sb-status-info); }
+</style>

@@ -1,0 +1,258 @@
+---
+// /app/keys — create, reveal, copy and revoke API keys; import a legacy
+// supporter key. Ported from the pre-rebuild compiled page. The key table is
+// server-rendered; the client script only creates/revokes/reveals.
+import AppShell from '../../layouts/AppShell.astro';
+import Flash from '../../components/Flash.astro';
+import { getSessionUser, getToken } from '../../lib/api/session';
+import { apiGet } from '../../lib/api/saas';
+
+const user = await getSessionUser(Astro);
+if (!user) return Astro.redirect('/login');
+const token = getToken(Astro)!;
+
+interface KeyRow {
+  id: string;
+  name?: string;
+  rate_limit_rpm?: number | null;
+  all_time_tokens?: number | null;
+  active?: boolean;
+}
+
+let keys: KeyRow[] = [];
+let loadErr = '';
+try {
+  const data = await apiGet<{ keys?: KeyRow[] }>('/saas/api/keys', token, Astro.request);
+  keys = data.keys ?? [];
+} catch (e) {
+  loadErr = e instanceof Error ? e.message : 'Gagal memuat API key.';
+}
+
+const nf = new Intl.NumberFormat('id-ID');
+---
+
+<AppShell title="API Keys" user={user}>
+  <section class="section">
+    <div class="container">
+      {loadErr && <Flash kind="err" message={loadErr} />}
+
+      {!user.hasPassword && (
+        <div class="flash flash-warn" style="margin-bottom:16px">
+          Akun kamu belum punya password. <a href="/app/set-password">Buat password sekarang</a> agar akun terlindungi.
+        </div>
+      )}
+
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;gap:10px">
+          <input class="input" id="keyName" placeholder="Nama key (mis. production)" style="max-width:280px" />
+          <button class="btn btn-primary" id="btnCreate">Buat Key</button>
+        </div>
+        <div id="newKeyBox"></div>
+      </div>
+
+      {!user.isSupporter && (
+        <div class="card" style="margin-bottom:16px">
+          <h3 style="margin-bottom:6px">Punya API key lama / supporter?</h3>
+          <p class="muted" style="font-size:13px;margin-bottom:10px">
+            Masukkan API key yang sudah kamu pakai sebelum bansosAI ada. Key akan diikat ke akun ini
+            dan statusnya menjadi <b>supporter</b>.
+          </p>
+          <div style="display:flex;gap:10px">
+            <input class="input mono" id="importKey" placeholder="bns_..." style="max-width:420px" />
+            <button class="btn btn-ghost" id="btnImport">Impor Key</button>
+          </div>
+          <div id="importBox"></div>
+        </div>
+      )}
+
+      <div class="card">
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>Name</th><th>Key</th><th>RPM</th><th>Total Token</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody>
+              {keys.length === 0 && <tr><td colspan="6" class="muted">Belum ada key.</td></tr>}
+              {keys.map((k) => (
+                <tr>
+                  <td class="mono">{k.name}</td>
+                  <td>
+                    <span class="mono" data-keytext={k.id}>••••••••••••</span>
+                    <button class="btn btn-ghost btn-sm" data-show={k.id} title="Tampilkan">👁</button>
+                    <button class="btn btn-ghost btn-sm" data-copy={k.id} title="Salin">⧉</button>
+                  </td>
+                  <td>{k.rate_limit_rpm ?? '∞'}</td>
+                  <td>{nf.format(k.all_time_tokens ?? 0)}</td>
+                  <td>
+                    {k.active
+                      ? <span class="badge badge-ok">aktif</span>
+                      : <span class="badge badge-err">revoked</span>}
+                  </td>
+                  <td>
+                    {k.active && <button class="btn btn-danger btn-sm" data-revoke={k.id}>Revoke</button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+</AppShell>
+
+<style is:global>
+  .card {
+    padding: var(--sb-lg);
+    background: var(--sb-canvas-raised);
+    border: 1px solid var(--sb-hairline);
+    border-radius: var(--sb-r-lg);
+    box-shadow: var(--sb-elev-1);
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sb-xs);
+    padding: 2px var(--sb-sm);
+    border: 1px solid var(--sb-hairline-strong);
+    border-radius: var(--sb-r-full);
+    background: var(--sb-canvas-raised);
+    color: var(--sb-ink);
+    font-size: var(--sb-micro);
+    font-weight: 500;
+  }
+  .badge-ok { border-color: var(--sb-status-success); color: var(--sb-status-success); }
+  .badge-err { border-color: var(--sb-status-danger); color: var(--sb-status-danger); }
+</style>
+
+<script is:inline>
+  // Key management. All calls go through same-origin Astro proxies, which
+  // authenticate with the httpOnly session cookie; no token reaches this script.
+  (function () {
+    var newKeyBox = document.getElementById('newKeyBox');
+    var importBox = document.getElementById('importBox');
+
+    function note(box, kind, html) {
+      if (box) box.innerHTML = '<div class="flash flash-' + kind + '" style="margin-top:12px">' + html + '</div>';
+    }
+
+    function errText(data, fallback) {
+      if (data && data.error) {
+        if (typeof data.error === 'string') return data.error;
+        if (data.error.message) return data.error.message;
+      }
+      return fallback;
+    }
+
+    function jsonOrThrow(resp) {
+      return resp.text().then(function (text) {
+        var data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          throw new Error('Respons tidak valid (HTTP ' + resp.status + ').');
+        }
+        if (!resp.ok) throw new Error(errText(data, 'HTTP ' + resp.status));
+        return data;
+      });
+    }
+
+    // ── Create key ──
+    var btnCreate = document.getElementById('btnCreate');
+    var keyName = document.getElementById('keyName');
+    if (btnCreate) {
+      btnCreate.addEventListener('click', function () {
+        var name = keyName && keyName.value ? keyName.value.trim() : '';
+        btnCreate.setAttribute('disabled', 'true');
+        fetch('/api/keys', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name: name }),
+        })
+          .then(jsonOrThrow)
+          .then(function (data) {
+            var secret = data.key || data.keyPrefix || '';
+            note(newKeyBox, 'ok', 'Key dibuat. Salin sekarang — tidak ditampilkan lagi:<div class="keybox"><span class="mono">' + secret + '</span></div>');
+            if (keyName) keyName.value = '';
+            setTimeout(function () { location.reload(); }, 4000);
+          })
+          .catch(function (e) { note(newKeyBox, 'err', e.message); })
+          .finally(function () { btnCreate.removeAttribute('disabled'); });
+      });
+    }
+
+    // ── Import legacy supporter key ──
+    var btnImport = document.getElementById('btnImport');
+    var importKey = document.getElementById('importKey');
+    if (btnImport) {
+      btnImport.addEventListener('click', function () {
+        var value = importKey && importKey.value ? importKey.value.trim() : '';
+        if (!value) { note(importBox, 'err', 'Masukkan API key lama kamu.'); return; }
+        btnImport.setAttribute('disabled', 'true');
+        fetch('/api/keys/reveal', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ key: value }),
+        })
+          .then(jsonOrThrow)
+          .then(function () {
+            note(importBox, 'ok', 'Key berhasil diimpor. Status akun menjadi supporter.');
+            setTimeout(function () { location.reload(); }, 1500);
+          })
+          .catch(function (e) { note(importBox, 'err', e.message); })
+          .finally(function () { btnImport.removeAttribute('disabled'); });
+      });
+    }
+
+    // ── Reveal / copy ──
+    document.querySelectorAll('[data-show]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = btn.getAttribute('data-show');
+        var target = document.querySelector('[data-keytext="' + id + '"]');
+        if (!target) return;
+        if (target.getAttribute('data-revealed') === '1') {
+          target.textContent = '••••••••••••';
+          target.removeAttribute('data-revealed');
+          return;
+        }
+        fetch('/api/keys/reveal?id=' + encodeURIComponent(id))
+          .then(jsonOrThrow)
+          .then(function (data) {
+            target.textContent = data.key || data.keyPrefix || '';
+            target.setAttribute('data-revealed', '1');
+          })
+          .catch(function (e) { alert(e.message); });
+      });
+    });
+
+    document.querySelectorAll('[data-copy]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = btn.getAttribute('data-copy');
+        var target = document.querySelector('[data-keytext="' + id + '"]');
+        var text = target ? target.textContent : '';
+        if (!text || text.indexOf('•') === 0) { alert('Tampilkan key dulu sebelum menyalin.'); return; }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(
+            function () { btn.textContent = '✓'; setTimeout(function () { btn.textContent = '⧉'; }, 1200); },
+            function () { alert('Salin manual: ' + text); },
+          );
+        } else {
+          alert('Salin manual: ' + text);
+        }
+      });
+    });
+
+    // ── Revoke ──
+    document.querySelectorAll('[data-revoke]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = btn.getAttribute('data-revoke');
+        if (!window.confirm('Revoke key ini? Aplikasi yang memakainya akan langsung gagal.')) return;
+        btn.setAttribute('disabled', 'true');
+        fetch('/api/keys?id=' + encodeURIComponent(id), { method: 'DELETE' })
+          .then(jsonOrThrow)
+          .then(function () { location.reload(); })
+          .catch(function (e) { btn.removeAttribute('disabled'); alert(e.message); });
+      });
+    });
+  })();
+</script>

@@ -1,0 +1,277 @@
+---
+// /app/billing — balance, plan checkout (QRIS / e-wallet / hosted), promo
+// redeem and payment history. Ported from the pre-rebuild compiled page.
+//
+// Server render: plans + slot counters (public), payment history and balance
+// (signed user endpoints). The client behaviour lives in /js/billing.js, which
+// drives the modal and calls the same-origin /api/* payment proxies.
+import AppShell from '../../layouts/AppShell.astro';
+import { getSessionUser, getToken } from '../../lib/api/session';
+import { apiGet } from '../../lib/api/saas';
+
+const user = await getSessionUser(Astro);
+if (!user) return Astro.redirect('/login');
+const token = getToken(Astro)!;
+
+interface PlanRow {
+  code: string;
+  name: string;
+  period: string;
+  priceIdr: number;
+}
+interface SlotRow {
+  limit: number;
+  claimed: number;
+  soldOut?: boolean;
+}
+interface PaymentRow {
+  order_id: string;
+  plan_code: string;
+  period: string;
+  amount_idr: number;
+  status: string;
+  created_at: string;
+}
+
+let plans: PlanRow[] = [];
+let slots: Record<string, SlotRow> = {};
+let payments: PaymentRow[] = [];
+let balance: number | null = null;
+
+try {
+  const data = await apiGet<{ plans?: PlanRow[]; slots?: Record<string, SlotRow> }>(
+    '/saas/api/plans',
+    '',
+    Astro.request,
+  );
+  plans = (data.plans ?? []).filter((p) => p.priceIdr > 0);
+  slots = data.slots ?? {};
+} catch {
+  /* plan catalog may be unreachable; the history/balance cards still render */
+}
+try {
+  const data = await apiGet<{ payments?: PaymentRow[] }>('/saas/api/billing/history', token, Astro.request);
+  payments = data.payments ?? [];
+} catch {
+  /* history is optional */
+}
+try {
+  const data = await apiGet<{ balanceIdr?: number; balance?: number }>('/saas/api/balance', token, Astro.request);
+  const b = data.balanceIdr ?? data.balance;
+  balance = typeof b === 'number' ? b : null;
+} catch {
+  /* balance is optional */
+}
+
+const fmt = (n: number) =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+const periodLabel = (p: string) => (p === 'daily' ? 'Harian' : p === 'weekly' ? 'Mingguan' : 'Bulanan');
+
+function slotInfo(plan: PlanRow): { limit: number; claimed: number; remaining: number; soldOut: boolean } | null {
+  const s = slots[`${plan.code}|${plan.period}`];
+  if (!s || !Number.isFinite(s.limit) || s.limit <= 0) return null;
+  const claimed = Math.max(0, Math.min(s.claimed, s.limit));
+  return { limit: s.limit, claimed, remaining: Math.max(0, s.limit - claimed), soldOut: s.soldOut || claimed >= s.limit };
+}
+---
+
+<AppShell title="Billing" user={user}>
+  <div
+    id="qrisOverlay"
+    style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999;backdrop-filter:blur(4px);"
+  >
+  </div>
+  <div
+    id="qrisModal"
+    style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:1000;align-items:center;justify-content:center;padding:20px;"
+  >
+    <div
+      style="background:var(--sb-canvas-raised);border:1px solid var(--sb-hairline);border-radius:16px;max-width:420px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.4);"
+    >
+      <div style="padding:20px;"><div id="qrisModalBody"></div></div>
+    </div>
+  </div>
+
+  <section class="section">
+    <div class="container">
+      <div id="flashBox"></div>
+
+      <div class="card" style="margin-bottom:16px">
+        <h3 style="margin-bottom:12px">Saldo</h3>
+        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+          <span style="font-size:30px;font-weight:750;color:var(--sb-primary)">{balance === null ? '—' : fmt(balance)}</span>
+          <span class="muted" style="font-size:13px">saldo akun</span>
+        </div>
+        <p class="muted" style="font-size:13px;margin-bottom:14px">
+          Saldo dipakai untuk topup dan juga tempat dana kembali otomatis kalau slot promo sudah penuh saat pembayaranmu masuk.
+        </p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <input class="input" id="topupAmount" type="number" min="1000" step="1000" placeholder="Nominal topup (mis. 20000)" style="max-width:260px" />
+          <button class="btn btn-primary" id="btnTopup">Topup Saldo</button>
+        </div>
+        <div id="topupMsg" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <h3 style="margin-bottom:12px">Pilih Plan</h3>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+          <label class="muted" for="payMethod" style="font-size:13px">Metode Pembayaran</label>
+          <select id="payMethod" class="input" style="min-width:220px">
+            <option value="">Memuat metode...</option>
+          </select>
+        </div>
+        <div id="phoneRow" style="display:none;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+          <label class="muted" for="payPhone" style="font-size:13px">No. HP (e-wallet/alfamart)</label>
+          <input id="payPhone" class="input" type="tel" placeholder="08xxxxxxxxxx" inputmode="numeric" style="max-width:220px" />
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>Plan</th><th>Periode</th><th>Harga</th><th>Slot</th><th></th></tr>
+            </thead>
+            <tbody>
+              {plans.map((p) => {
+                const info = slotInfo(p);
+                return (
+                  <tr>
+                    <td>{p.name}</td>
+                    <td class="muted">{periodLabel(p.period)}</td>
+                    <td><b>{fmt(p.priceIdr)}</b></td>
+                    <td>
+                      {info ? (
+                        <div style="display:flex;flex-direction:column;gap:4px;min-width:132px">
+                          <span class={`badge ${info.soldOut ? 'badge-err' : 'badge-accent'}`}>
+                            {info.soldOut ? 'Kuota penuh' : `Sisa ${info.remaining} slot`}
+                          </span>
+                          <span class="muted" style="font-size:11px">{info.claimed}/{info.limit} terisi</span>
+                          <div
+                            class="slot-bar"
+                            style="height:4px"
+                            role="progressbar"
+                            aria-valuemin="0"
+                            aria-valuemax={info.limit}
+                            aria-valuenow={info.claimed}
+                            aria-label={`Slot ${p.name}`}
+                          >
+                            <div class="slot-fill" style={`width:${Math.round((info.claimed / info.limit) * 100)}%`}></div>
+                          </div>
+                        </div>
+                      ) : (
+                        <span class="muted" style="font-size:12px">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {info && info.soldOut ? (
+                        <span
+                          class="btn btn-sm"
+                          style="background:var(--sb-canvas-night);color:var(--sb-ink-mute);cursor:not-allowed"
+                          aria-disabled="true"
+                        >Kuota penuh</span>
+                      ) : (
+                        <button
+                          class="btn btn-primary btn-sm"
+                          data-buy={p.code}
+                          data-period={p.period}
+                          data-plan={p.name}
+                          data-min={p.priceIdr}
+                        >Bayar</button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <h3 style="margin-bottom:12px">Redeem Promo Code</h3>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <input
+            class="input"
+            id="promoCode"
+            placeholder="Masukkan kode promo"
+            style="flex:1;min-width:200px;max-width:320px;text-transform:uppercase;"
+          />
+          <button class="btn btn-primary" id="btnRedeem">Redeem</button>
+        </div>
+        <div id="promoMsg" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-bottom:12px">Riwayat Pembayaran</h3>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>Order ID</th><th>Plan</th><th>Jumlah</th><th>Status</th><th>Tanggal</th></tr>
+            </thead>
+            <tbody>
+              {payments.length === 0 && <tr><td colspan="5" class="muted">Belum ada pembayaran.</td></tr>}
+              {payments.map((p) => (
+                <tr>
+                  <td class="mono">{p.order_id}</td>
+                  <td>{p.plan_code}/{p.period}</td>
+                  <td>{fmt(p.amount_idr)}</td>
+                  <td>
+                    {p.status === 'paid' ? (
+                      <span class="badge badge-ok">lunas</span>
+                    ) : p.status === 'pending' ? (
+                      <span class="badge badge-warn">pending</span>
+                    ) : (
+                      <span class="badge badge-err">{p.status}</span>
+                    )}
+                  </td>
+                  <td class="muted" style="font-size:13px">{new Date(p.created_at).toLocaleString('id-ID')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+</AppShell>
+
+<style is:global>
+  .card {
+    padding: var(--sb-lg);
+    background: var(--sb-canvas-raised);
+    border: 1px solid var(--sb-hairline);
+    border-radius: var(--sb-r-lg);
+    box-shadow: var(--sb-elev-1);
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sb-xs);
+    padding: 2px var(--sb-sm);
+    border: 1px solid var(--sb-hairline-strong);
+    border-radius: var(--sb-r-full);
+    background: var(--sb-canvas-raised);
+    color: var(--sb-ink);
+    font-size: var(--sb-micro);
+    font-weight: 500;
+  }
+  .badge-accent { border-color: var(--sb-primary); color: var(--sb-primary); }
+  .badge-ok { border-color: var(--sb-status-success); color: var(--sb-status-success); }
+  .badge-warn { border-color: var(--sb-status-warning); color: var(--sb-status-warning); }
+  .badge-err { border-color: var(--sb-status-danger); color: var(--sb-status-danger); }
+  .flash {
+    padding: var(--sb-md) var(--sb-lg);
+    border: 1px solid var(--sb-hairline-strong);
+    border-left-width: 3px;
+    border-radius: var(--sb-r-sm);
+    background: var(--sb-canvas-raised);
+    font-size: var(--sb-caption);
+    margin-bottom: var(--sb-lg);
+  }
+  .flash-ok { border-left-color: var(--sb-status-success); }
+  .flash-err { border-left-color: var(--sb-status-danger); }
+  .slot-bar { background: var(--sb-canvas-night); border-radius: var(--sb-r-full); overflow: hidden; }
+  .slot-fill { height: 100%; background: var(--sb-primary); }
+  @keyframes pulse { 0%, to { opacity: 1; } 50% { opacity: 0.4; } }
+</style>
+
+<script is:inline src="/js/qrcode.js"></script>
+<script is:inline src="/js/billing.js"></script>

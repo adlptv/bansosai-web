@@ -1,0 +1,379 @@
+---
+// /admin/subs — subscription models per plan + per-user role/plan management.
+import AppShell from '../../layouts/AppShell.astro';
+import { requireAdminPage } from '../../lib/api/admin';
+import { getSessionUser } from '../../lib/api/session';
+
+const gate = await requireAdminPage(Astro);
+if (gate) return gate;
+
+const user = await getSessionUser(Astro);
+---
+
+<AppShell title="Subscription Models" subtitle="Atur model AI per plan subscription." user={user}>
+  <div data-last-updated style="font-size:12px;color:var(--sb-ink-mute);margin-bottom:16px;"></div>
+
+  <div id="admin-content">
+    <div class="card" style="margin-bottom:24px;">
+      <h3 style="margin-bottom:16px;">Pilih Plan</h3>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+        <select class="input" id="plan-select" style="min-width:240px;">
+          <option value="">— Pilih plan —</option>
+        </select>
+        <button class="btn btn-primary" id="load-btn">Muat</button>
+      </div>
+    </div>
+    <div id="load-err"></div>
+
+    <div class="card" style="margin-bottom:24px;display:none;" id="models-card">
+      <h3 style="margin-bottom:16px;">Models: <span id="plan-name" style="color:var(--sb-primary);"></span></h3>
+      <div id="models-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;"></div>
+      <hr style="border-color:var(--sb-hairline);margin:16px 0;" />
+      <h4 style="margin-bottom:12px;">Tambah Model</h4>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <input class="input" id="new-model" placeholder="provider/model-name" style="flex:1;min-width:200px;" />
+        <button class="btn btn-primary" id="add-btn">Tambah</button>
+      </div>
+    </div>
+
+    <!-- User Role Management -->
+    <div class="card" style="margin-bottom:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+        <h3>Role Management</h3>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="text" id="role-search" class="input" placeholder="Cari email..." style="max-width:220px;" />
+          <button class="btn btn-ghost btn-sm" id="refresh-roles-btn">Refresh</button>
+        </div>
+      </div>
+      <p class="muted" style="margin-bottom:16px;">
+        Ubah role pengguna. Centang "Setujui" lalu klik Terapkan untuk menerapkan perubahan.
+      </p>
+      <div id="role-err"></div>
+      <div id="roles-table-wrap" class="table-wrap">
+        <p class="muted">Memuat...</p>
+      </div>
+    </div>
+  </div>
+
+  <style is:global>
+    .card {
+      padding: var(--sb-lg);
+      background: var(--sb-canvas-raised);
+      border: 1px solid var(--sb-hairline);
+      border-radius: var(--sb-r-lg);
+      box-shadow: var(--sb-elev-1);
+    }
+    .table { width: 100%; border-collapse: collapse; font-size: var(--sb-caption); }
+    .table th,
+    .table td {
+      padding: var(--sb-md) var(--sb-lg);
+      text-align: left;
+      vertical-align: middle;
+      border-bottom: 1px solid var(--sb-hairline);
+    }
+    .table th { color: var(--sb-ink-mute); font-weight: 500; background: var(--sb-canvas-night); }
+    .table tbody tr:hover td { background: var(--sb-canvas-night); }
+    .table-wrap { width: 100%; overflow-x: auto; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sb-xs);
+      padding: 2px var(--sb-sm);
+      border: 1px solid var(--sb-hairline-strong);
+      border-radius: var(--sb-r-full);
+      background: var(--sb-canvas-raised);
+      color: var(--sb-ink);
+      font-size: var(--sb-micro);
+      font-weight: 500;
+    }
+    .badge-accent { border-color: var(--sb-primary); color: var(--sb-primary); }
+    .badge-ok { border-color: var(--sb-status-success); color: var(--sb-status-success); }
+    .badge-warn { border-color: var(--sb-status-warning); color: var(--sb-status-warning); }
+    .badge-err { border-color: var(--sb-status-danger); color: var(--sb-status-danger); }
+    .badge-premium { background: var(--sb-ink); border-color: var(--sb-ink); color: var(--sb-canvas); }
+    .flash { padding: var(--sb-md) var(--sb-lg); border: 1px solid var(--sb-hairline-strong); border-left-width: 3px; border-radius: var(--sb-r-sm); background: var(--sb-canvas-raised); font-size: var(--sb-caption); }
+    .flash-err { border-left-color: var(--sb-status-danger); }
+  </style>
+
+  <script is:inline>
+    window.adminSession = (function () {
+      var NAME = 'console_jwt';
+      var MAX_AGE = 12 * 3600;
+      function get() {
+        var parts = String(document.cookie || '').split(';');
+        for (var i = 0; i < parts.length; i++) {
+          var pair = parts[i].trim();
+          if (pair.indexOf(NAME + '=') === 0) return decodeURIComponent(pair.slice(NAME.length + 1));
+        }
+        return '';
+      }
+      function set(token) {
+        if (!token) return;
+        var attrs = '; Path=/; SameSite=Lax; Max-Age=' + MAX_AGE;
+        if (location.protocol === 'https:') attrs += '; Secure';
+        document.cookie = NAME + '=' + encodeURIComponent(token) + attrs;
+      }
+      function clear() { document.cookie = NAME + '=; Path=/; SameSite=Lax; Max-Age=0'; }
+      return { get: get, set: set, clear: clear };
+    })();
+  </script>
+
+  <script is:inline>
+    let token = window.adminSession.get();
+    let currentPlan = '';
+    // Plan rows for the per-user plan editor (populated by loadPlans).
+    let allRolePlans = [];
+    let allRoleUsers = [];
+    showContent();
+
+    function headers() {
+      return { 'content-type': 'application/json', 'authorization': 'Bearer ' + token };
+    }
+
+    function handle401() {
+      window.adminSession.clear();
+      token = '';
+      window.location.href = '/login?err=' + encodeURIComponent('Sesi admin berakhir, login ulang.');
+    }
+
+    function showContent() {
+      loadPlans();
+      loadRoleUsers();
+    }
+
+    async function loadPlans() {
+      try {
+        const resp = await fetch('/api/console/saas/plans', { headers: headers() });
+        if (resp.status === 401) { handle401(); return; }
+        const data = await resp.json();
+        const plans = data.plans ?? [];
+        allRolePlans = plans;
+        const sel = document.getElementById('plan-select');
+        sel.innerHTML = '<option value="">— Pilih plan —</option>';
+        plans.forEach(function (p) {
+          const opt = document.createElement('option');
+          opt.value = p.code;
+          opt.textContent = p.name + ' (' + p.code + '/' + p.period + ') • Rp' +
+            Number(p.priceIdr ?? 0).toLocaleString('id-ID') +
+            (p.slotLimit ? ' • slot ' + Number(p.slotLimit).toLocaleString('id-ID') : '') +
+            (!p.active ? ' • OFF' : '');
+          sel.appendChild(opt);
+        });
+        renderRoleUsers(allRoleUsers); // refresh plan dropdowns now that plans are known
+      } catch (e) {
+        document.getElementById('load-err').innerHTML = '<div class="flash flash-err">Gagal memuat plans: ' + e.message + '</div>';
+      }
+    }
+
+    document.getElementById('load-btn').addEventListener('click', async function () {
+      const plan = document.getElementById('plan-select').value;
+      if (!plan) { alert('Pilih plan dulu'); return; }
+      currentPlan = plan;
+      await loadModels();
+    });
+
+    async function loadModels() {
+      try {
+        const resp = await fetch('/api/console/plan-models', { headers: headers() });
+        if (resp.status === 401) { handle401(); return; }
+        const data = await resp.json();
+        const plans = data.plans ?? {};
+        const models = plans[currentPlan] ?? [];
+        document.getElementById('plan-name').textContent = currentPlan;
+        document.getElementById('models-card').style.display = 'block';
+        renderModels(models);
+        const el = document.querySelector('[data-last-updated]');
+        if (el) el.textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+      } catch (e) {
+        document.getElementById('load-err').innerHTML = '<div class="flash flash-err">' + e.message + '</div>';
+      }
+    }
+
+    function renderModels(models) {
+      const wrap = document.getElementById('models-list');
+      if (!models.length) {
+        wrap.innerHTML = '<span class="muted">Belum ada model. Tambahkan di bawah.</span>';
+        return;
+      }
+      wrap.innerHTML = models.map(function (m) {
+        return '<span class="badge badge-accent" style="display:inline-flex;align-items:center;gap:6px;">' +
+          m +
+          '<button onclick="removeModel(\'' + encodeURIComponent(m) + '\')" style="background:none;border:none;color:var(--sb-status-danger);cursor:pointer;padding:0;font-size:14px;">&times;</button>' +
+        '</span>';
+      }).join('');
+    }
+
+    // saveModels replaces the whole model list for currentPlan (PUT plan-models).
+    async function saveModels(models) {
+      const resp = await fetch('/api/console/plan-models', {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify({ planCode: currentPlan, modelIds: models }),
+      });
+      if (resp.status === 401) { handle401(); return false; }
+      return resp.ok;
+    }
+
+    window.removeModel = async function (encodedModel) {
+      const model = decodeURIComponent(encodedModel);
+      if (!confirm('Hapus model "' + model + '" dari plan ' + currentPlan + '?')) return;
+      try {
+        const current = await (await fetch('/api/console/plan-models', { headers: headers() })).json().then(function (d) { return (d.plans ?? {})[currentPlan] ?? []; });
+        const next = current.filter(function (m) { return m !== model; });
+        if (await saveModels(next)) loadModels();
+        else alert('Gagal menghapus model');
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+
+    document.getElementById('add-btn').addEventListener('click', async function () {
+      const input = document.getElementById('new-model');
+      const model = input.value.trim();
+      if (!model) { alert('Masukkan model ID'); return; }
+      try {
+        const current = await (await fetch('/api/console/plan-models', { headers: headers() })).json().then(function (d) { return (d.plans ?? {})[currentPlan] ?? []; });
+        if (current.includes(model)) { alert('Model sudah ada di plan ini'); return; }
+        const next = current.concat([model]);
+        if (await saveModels(next)) {
+          input.value = '';
+          loadModels();
+        } else {
+          alert('Gagal menambah model');
+        }
+      } catch (e) { alert('Error: ' + e.message); }
+    });
+
+    // ── Role Management ─────────────────────────────────────────────────────
+    async function loadRoleUsers() {
+      try {
+        const resp = await fetch('/api/console/saas/users', { headers: headers() });
+        if (resp.status === 401) { handle401(); return; }
+        const data = await resp.json();
+        allRoleUsers = data.items ?? data.users ?? [];
+        renderRoleUsers(allRoleUsers);
+      } catch (e) {
+        document.getElementById('role-err').innerHTML = '<div class="flash flash-err">' + e.message + '</div>';
+      }
+    }
+
+    function roleBadgeClass(role) {
+      return role === 'admin' ? 'badge-err' : role === 'enterprise' ? 'badge-warn' : role === 'pro' ? 'badge-accent' : role === 'supporter' ? 'badge-premium' : 'badge-ok';
+    }
+
+    function renderRoleUsers(users) {
+      const wrap = document.getElementById('roles-table-wrap');
+      if (!users.length) {
+        wrap.innerHTML = '<p class="muted">Tidak ada pengguna.</p>';
+        return;
+      }
+      const roles = ['user', 'pro', 'enterprise', 'supporter', 'admin'];
+      const planOptions = allRolePlans.map(function (p) {
+        return '<option value="' + p.code + '||' + p.period + '">' + p.name + ' (' + p.code + '/' + p.period + ')</option>';
+      }).join('');
+      wrap.innerHTML = '<table class="table">' +
+        '<thead><tr><th>Email</th><th>Plan Saat Ini</th><th>Role</th><th>Ubah Plan</th><th>Ubah Role</th><th>Setujui</th><th>Aksi</th></tr></thead>' +
+        '<tbody>' + users.map(function (u) {
+          const curRole = u.role || 'user';
+          const planLabel = u.planCode ? (u.planName ?? u.planCode) + ' (' + u.planCode + '/' + (u.planPeriod ?? '?') + ')' : '<span class="muted">—</span>';
+          const expLabel = u.subExpiresAt ? '<div class="muted" style="font-size:11px;">s/d ' + new Date(u.subExpiresAt).toLocaleDateString('id-ID') + '</div>' : '';
+          return '<tr data-uid="' + u.id + '">' +
+            '<td><span style="color:var(--sb-primary);">' + u.email + '</span>' +
+              (u.isSupporter ? '<div><span class="badge badge-accent" title="Supporter: tier free tanpa batas">supporter ⚡</span></div>' : '') +
+            '</td>' +
+            '<td>' + planLabel + expLabel + '</td>' +
+            '<td><span class="badge ' + roleBadgeClass(curRole) + '">' + curRole + '</span></td>' +
+            '<td><select class="input role-plan-select" data-uid="' + u.id + '" style="padding:4px 8px;min-width:150px;font-size:13px;">' +
+              '<option value="">— tidak diubah —</option>' +
+              '<option value="clear">✕ Hapus plan (kembali ke free)</option>' +
+              planOptions +
+            '</select></td>' +
+            '<td><select class="input role-new-select" data-uid="' + u.id + '" style="padding:4px 8px;min-width:120px;font-size:13px;">' +
+              '<option value="">— tidak diubah —</option>' +
+              roles.map(function (r) { return '<option value="' + r + '"' + (r === curRole ? ' selected' : '') + '>' + r + '</option>'; }).join('') +
+            '</select></td>' +
+            '<td style="text-align:center;"><input type="checkbox" class="role-approve-cb" data-uid="' + u.id + '" /></td>' +
+            '<td><button class="btn btn-primary btn-sm role-save-btn" data-uid="' + u.id + '" disabled>Terapkan</button></td>' +
+          '</tr>';
+        }).join('') + '</tbody></table>';
+
+      // Wire checkbox → enable/disable save button
+      document.querySelectorAll('.role-approve-cb').forEach(function (cb) {
+        cb.addEventListener('change', function () {
+          const btn = document.querySelector('.role-save-btn[data-uid="' + cb.dataset.uid + '"]');
+          if (btn) btn.disabled = !cb.checked;
+        });
+      });
+
+      // Wire save buttons
+      document.querySelectorAll('.role-save-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () { changeUserRole(btn.dataset.uid); });
+      });
+    }
+
+    // applyUserPatch sends one PATCH per user with whichever fields changed:
+    // role and/or plan. "clear" removes the plan entirely (free fallback).
+    async function changeUserRole(uid) {
+      const roleSel = document.querySelector('.role-new-select[data-uid="' + uid + '"]');
+      const planSel = document.querySelector('.role-plan-select[data-uid="' + uid + '"]');
+      const cb = document.querySelector('.role-approve-cb[data-uid="' + uid + '"]');
+      if (!roleSel || !cb) return;
+
+      if (!cb.checked) {
+        alert('Centang "Setujui" terlebih dahulu.');
+        return;
+      }
+
+      const newRole = roleSel.value;
+      const planChoice = planSel ? planSel.value : '';
+      const patch = {};
+      const desc = [];
+      if (newRole) { patch.role = newRole; desc.push('role → ' + newRole); }
+      if (planChoice === 'clear') {
+        patch.planClear = true;
+        desc.push('plan dihapus (kembali ke free)');
+      } else if (planChoice) {
+        const parts = planChoice.split('||');
+        patch.planCode = parts[0];
+        patch.planPeriod = parts[1];
+        desc.push('plan → ' + parts[0] + '/' + parts[1]);
+      }
+      if (!Object.keys(patch).length) {
+        alert('Tidak ada perubahan dipilih (pilih role baru atau plan baru, atau keduanya).');
+        return;
+      }
+
+      const u = allRoleUsers.find(function (x) { return x.id === uid; });
+      if (!confirm('Terapkan ke "' + ((u && u.email) || uid) + '": ' + desc.join(', ') + '?')) return;
+
+      try {
+        const resp = await fetch('/api/console/saas/users/' + uid, {
+          method: 'PATCH',
+          headers: headers(),
+          body: JSON.stringify(patch),
+        });
+        if (resp.status === 401) { handle401(); return; }
+        if (resp.ok) {
+          cb.checked = false;
+          if (roleSel) roleSel.value = '';
+          if (planSel) planSel.value = '';
+          const btn = document.querySelector('.role-save-btn[data-uid="' + uid + '"]');
+          if (btn) btn.disabled = true;
+          loadRoleUsers();
+        } else {
+          const data = await resp.json().catch(function () { return {}; });
+          alert((data && data.error && data.error.message) || 'Gagal menerapkan perubahan');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+
+    // Role search filter
+    document.getElementById('role-search').addEventListener('input', function (e) {
+      const q = e.target.value.toLowerCase();
+      if (!q) { renderRoleUsers(allRoleUsers); return; }
+      renderRoleUsers(allRoleUsers.filter(function (u) { return (u.email || '').toLowerCase().indexOf(q) >= 0; }));
+    });
+
+    document.getElementById('refresh-roles-btn').addEventListener('click', function () { loadRoleUsers(); });
+  </script>
+</AppShell>

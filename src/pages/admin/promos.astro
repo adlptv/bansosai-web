@@ -1,0 +1,352 @@
+---
+// /admin/promos — promo code CRUD (create/edit/delete) backed by
+// /api/console/saas/promos. Plan targets come from /api/console/saas/plans.
+import AppShell from '../../layouts/AppShell.astro';
+import { requireAdminPage } from '../../lib/api/admin';
+import { getSessionUser } from '../../lib/api/session';
+
+const gate = await requireAdminPage(Astro);
+if (gate) return gate;
+
+const user = await getSessionUser(Astro);
+---
+
+<AppShell title="Promo Codes" subtitle="Buat, ubah, dan hapus promo code." user={user}>
+  <div data-last-updated style="font-size:12px;color:var(--sb-ink-mute);margin-bottom:16px;"></div>
+
+  <div id="admin-content">
+    <div class="card" style="margin-bottom:24px;">
+      <h3 id="form-title" style="margin-bottom:16px;">Buat Promo Code</h3>
+      <form id="promo-form">
+        <input type="hidden" id="promo-code-orig" />
+        <div class="form-grid">
+          <div>
+            <label class="label">Kode</label>
+            <input class="input" id="promo-code" placeholder="SUMMER50" style="text-transform:uppercase;" required />
+          </div>
+          <div>
+            <label class="label">Tipe</label>
+            <select class="input" id="promo-type">
+              <option value="plan">Plan Upgrade</option>
+              <option value="quota">Quota Token</option>
+              <option value="discount">Diskon</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Value</label>
+            <input class="input" id="promo-value" placeholder="pro / 50000 / 50" />
+          </div>
+          <div>
+            <label class="label">Plan Tujuan (untuk tipe plan)</label>
+            <select class="input" id="promo-plan-code">
+              <option value="">Memuat plan…</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Quota Tokens (untuk tipe quota)</label>
+            <input class="input" id="promo-quota-tokens" type="number" placeholder="50000" />
+          </div>
+          <div>
+            <label class="label">Max Uses</label>
+            <input class="input" id="promo-max-uses" type="number" placeholder="100" />
+          </div>
+          <div>
+            <label class="label">Expires At (opsional)</label>
+            <input class="input" id="promo-expires-at" type="datetime-local" />
+          </div>
+          <div>
+            <label class="label">Active</label>
+            <select class="input" id="promo-active">
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="save-btn">Simpan</button>
+          <button type="button" class="btn btn-ghost" id="cancel-btn" style="display:none;">Batal</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="load-err"></div>
+
+    <div class="card">
+      <h3 style="margin-bottom:16px;">Daftar Promo Codes</h3>
+      <div id="promos-wrap" class="table-wrap">
+        <p class="muted">Memuat...</p>
+      </div>
+    </div>
+  </div>
+
+  <style is:global>
+    .card {
+      padding: var(--sb-lg);
+      background: var(--sb-canvas-raised);
+      border: 1px solid var(--sb-hairline);
+      border-radius: var(--sb-r-lg);
+      box-shadow: var(--sb-elev-1);
+    }
+    .table { width: 100%; border-collapse: collapse; font-size: var(--sb-caption); }
+    .table th,
+    .table td {
+      padding: var(--sb-md) var(--sb-lg);
+      text-align: left;
+      vertical-align: middle;
+      border-bottom: 1px solid var(--sb-hairline);
+    }
+    .table th { color: var(--sb-ink-mute); font-weight: 500; background: var(--sb-canvas-night); }
+    .table tbody tr:hover td { background: var(--sb-canvas-night); }
+    .table-wrap { width: 100%; overflow-x: auto; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--sb-lg); }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sb-xs);
+      padding: 2px var(--sb-sm);
+      border: 1px solid var(--sb-hairline-strong);
+      border-radius: var(--sb-r-full);
+      background: var(--sb-canvas-raised);
+      color: var(--sb-ink);
+      font-size: var(--sb-micro);
+      font-weight: 500;
+    }
+    .badge-accent { border-color: var(--sb-primary); color: var(--sb-primary); }
+    .badge-ok { border-color: var(--sb-status-success); color: var(--sb-status-success); }
+    .badge-warn { border-color: var(--sb-status-warning); color: var(--sb-status-warning); }
+    .badge-err { border-color: var(--sb-status-danger); color: var(--sb-status-danger); }
+    .flash { padding: var(--sb-md) var(--sb-lg); border: 1px solid var(--sb-hairline-strong); border-left-width: 3px; border-radius: var(--sb-r-sm); background: var(--sb-canvas-raised); font-size: var(--sb-caption); }
+    .flash-err { border-left-color: var(--sb-status-danger); }
+    .btn-danger { background: var(--sb-canvas-raised); border-color: var(--sb-status-danger); color: var(--sb-status-danger); }
+    .btn-danger:hover { background: var(--sb-status-danger); color: var(--sb-on-primary); }
+  </style>
+
+  <script is:inline>
+    window.adminSession = (function () {
+      var NAME = 'console_jwt';
+      var MAX_AGE = 12 * 3600;
+      function get() {
+        var parts = String(document.cookie || '').split(';');
+        for (var i = 0; i < parts.length; i++) {
+          var pair = parts[i].trim();
+          if (pair.indexOf(NAME + '=') === 0) return decodeURIComponent(pair.slice(NAME.length + 1));
+        }
+        return '';
+      }
+      function set(token) {
+        if (!token) return;
+        var attrs = '; Path=/; SameSite=Lax; Max-Age=' + MAX_AGE;
+        if (location.protocol === 'https:') attrs += '; Secure';
+        document.cookie = NAME + '=' + encodeURIComponent(token) + attrs;
+      }
+      function clear() { document.cookie = NAME + '=; Path=/; SameSite=Lax; Max-Age=0'; }
+      return { get: get, set: set, clear: clear };
+    })();
+  </script>
+
+  <script is:inline>
+    let token = window.adminSession.get();
+    let allPromos = [];
+    let pollTimer = null;
+    let allPlanOptions = [];
+    showContent();
+
+    function headers() {
+      return { 'content-type': 'application/json', 'authorization': 'Bearer ' + token };
+    }
+
+    function handle401() {
+      window.adminSession.clear();
+      token = '';
+      window.location.href = '/login?err=' + encodeURIComponent('Sesi admin berakhir, login ulang.');
+    }
+
+    async function showContent() {
+      await Promise.all([loadPromos(), loadPlanOptions()]);
+      // Realtime polling — refresh promos every 30s
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(function () { loadPromos(); }, 30000);
+    }
+
+    // Fill the plan-target dropdown from the plans list so a "plan upgrade" promo
+    // can only reference real plans (code + period as shown in /admin/plans).
+    async function loadPlanOptions() {
+      try {
+        const resp = await fetch('/api/console/saas/plans', { headers: headers() });
+        if (resp.status === 401) { handle401(); return; }
+        if (!resp.ok) return;
+        const data = await resp.json();
+        allPlanOptions = data.plans ?? [];
+        const sel = document.getElementById('promo-plan-code');
+        if (!sel) return;
+        const prev = sel.value;
+        sel.innerHTML = '<option value="">— pilih plan —</option>' + allPlanOptions
+          .map(function (p) { return '<option value="' + p.code + '">' + p.name + ' (' + p.code + ' · ' + p.period + ')</option>'; })
+          .join('');
+        if (prev) sel.value = prev;
+      } catch (e) {
+        const sel = document.getElementById('promo-plan-code');
+        if (sel) sel.innerHTML = '<option value="">Gagal memuat plan</option>';
+      }
+    }
+
+    async function loadPromos() {
+      try {
+        const resp = await fetch('/api/console/saas/promos', { headers: headers() });
+        if (resp.status === 401) { handle401(); return; }
+        if (!resp.ok) return;
+        const data = await resp.json();
+        allPromos = data.promos ?? data.items ?? data ?? [];
+        renderPromos();
+        const el = document.querySelector('[data-last-updated]');
+        if (el) el.textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+      } catch (e) {
+        document.getElementById('load-err').innerHTML = '<div class="flash flash-err">Gagal memuat promos: ' + e.message + '</div>';
+      }
+    }
+
+    function renderPromos() {
+      const wrap = document.getElementById('promos-wrap');
+      if (!allPromos.length) {
+        wrap.innerHTML = '<p class="muted">Belum ada promo code. Buat di form atas.</p>';
+        return;
+      }
+      wrap.innerHTML = '<table class="table">' +
+        '<thead><tr><th>Code</th><th>Type</th><th>Value</th><th>Plan</th><th>Quota</th><th>Max Uses</th><th>Used</th><th>Expires</th><th>Status</th><th>Aksi</th></tr></thead>' +
+        '<tbody>' + allPromos.map(function (p) {
+          const isActive = p.active !== false;
+          const expired = p.expires_at && new Date(p.expires_at) < new Date();
+          const statusBadge = expired
+            ? '<span class="badge badge-warn">Expired</span>'
+            : isActive
+              ? '<span class="badge badge-ok">Active</span>'
+              : '<span class="badge badge-err">Off</span>';
+          const expires = p.expires_at
+            ? new Date(p.expires_at).toLocaleDateString('id-ID')
+            : '<span class="muted">—</span>';
+          return '<tr data-code="' + p.code + '">' +
+            '<td><code class="mono" style="color:var(--sb-primary);">' + p.code + '</code></td>' +
+            '<td><span class="badge badge-accent">' + p.type + '</span></td>' +
+            '<td>' + (p.value ?? '<span class="muted">—</span>') + '</td>' +
+            '<td>' + (p.plan_code ?? '<span class="muted">—</span>') + '</td>' +
+            '<td>' + (p.quota_tokens ? Number(p.quota_tokens).toLocaleString('id-ID') : '<span class="muted">—</span>') + '</td>' +
+            '<td>' + (p.max_uses ?? '<span class="muted">∞</span>') + '</td>' +
+            '<td>' + (p.used_count ?? 0) + '</td>' +
+            '<td>' + expires + '</td>' +
+            '<td>' + statusBadge + '</td>' +
+            '<td>' +
+              '<button class="btn btn-ghost btn-sm edit-btn" data-code="' + p.code + '">Edit</button>' +
+              '<button class="btn btn-danger btn-sm delete-btn" data-code="' + p.code + '" style="margin-left:4px;">Hapus</button>' +
+            '</td>' +
+          '</tr>';
+        }).join('') + '</tbody></table>';
+
+      document.querySelectorAll('.edit-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () { editPromo(btn.dataset.code); });
+      });
+      document.querySelectorAll('.delete-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () { deletePromo(btn.dataset.code); });
+      });
+    }
+
+    function editPromo(code) {
+      const p = allPromos.find(function (x) { return x.code === code; });
+      if (!p) return;
+      document.getElementById('promo-code-orig').value = p.code;
+      document.getElementById('promo-code').value = p.code;
+      document.getElementById('promo-type').value = p.type ?? 'plan';
+      document.getElementById('promo-value').value = p.value ?? '';
+      document.getElementById('promo-plan-code').value = p.plan_code ?? p.value ?? '';
+      document.getElementById('promo-quota-tokens').value = p.quota_tokens ?? '';
+      document.getElementById('promo-max-uses').value = p.max_uses ?? '';
+      if (p.expires_at) {
+        const d = new Date(p.expires_at);
+        const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        document.getElementById('promo-expires-at').value = local;
+      } else {
+        document.getElementById('promo-expires-at').value = '';
+      }
+      document.getElementById('promo-active').value = String(p.active !== false);
+      document.getElementById('cancel-btn').style.display = 'inline-block';
+      document.getElementById('form-title').textContent = 'Edit Promo Code';
+      document.getElementById('save-btn').textContent = 'Update';
+      window.scrollTo(0, 0);
+    }
+
+    async function deletePromo(code) {
+      if (!confirm('Hapus promo code "' + code + '"? Tindakan ini tidak bisa dibatalkan.')) return;
+      try {
+        const resp = await fetch('/api/console/saas/promos/' + encodeURIComponent(code), {
+          method: 'DELETE',
+          headers: headers(),
+        });
+        if (resp.status === 401) { handle401(); return; }
+        if (resp.ok) {
+          loadPromos();
+        } else {
+          const data = await resp.json().catch(function () { return {}; });
+          alert((data && data.error && data.error.message) || 'Gagal menghapus promo');
+        }
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    document.getElementById('promo-form').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const origCode = document.getElementById('promo-code-orig').value;
+      const code = document.getElementById('promo-code').value.trim().toUpperCase();
+      if (!code) { alert('Kode promo wajib diisi'); return; }
+
+      const promoType = document.getElementById('promo-type').value;
+      const planCode = document.getElementById('promo-plan-code').value;
+      if (promoType === 'plan' && !planCode) {
+        alert('Pilih plan tujuan untuk tipe Plan Upgrade.');
+        return;
+      }
+
+      const body = {
+        code: code,
+        type: promoType,
+        // For plan-type promos the plan dropdown is the source of truth; mirror
+        // it into value so older readers that only look at value keep working.
+        value: promoType === 'plan' ? planCode : (document.getElementById('promo-value').value || undefined),
+        plan_code: planCode || undefined,
+        quota_tokens: parseInt(document.getElementById('promo-quota-tokens').value, 10) || undefined,
+        max_uses: parseInt(document.getElementById('promo-max-uses').value, 10) || undefined,
+        expires_at: document.getElementById('promo-expires-at').value || undefined,
+        active: document.getElementById('promo-active').value === 'true',
+      };
+
+      const url = origCode
+        ? '/api/console/saas/promos/' + encodeURIComponent(origCode)
+        : '/api/console/saas/promos';
+      const method = origCode ? 'PATCH' : 'POST';
+
+      const btn = document.getElementById('save-btn');
+      btn.setAttribute('disabled', 'true');
+      try {
+        const resp = await fetch(url, { method: method, headers: headers(), body: JSON.stringify(body) });
+        if (resp.status === 401) { handle401(); return; }
+        if (resp.ok) {
+          document.getElementById('promo-form').reset();
+          document.getElementById('promo-code-orig').value = '';
+          document.getElementById('cancel-btn').style.display = 'none';
+          document.getElementById('form-title').textContent = 'Buat Promo Code';
+          document.getElementById('save-btn').textContent = 'Simpan';
+          loadPromos();
+        } else {
+          const data = await resp.json().catch(function () { return {}; });
+          alert((data && data.error && data.error.message) || 'Gagal menyimpan promo');
+        }
+      } catch (e) { alert('Error: ' + e.message); }
+      btn.removeAttribute('disabled');
+    });
+
+    document.getElementById('cancel-btn').addEventListener('click', function () {
+      document.getElementById('promo-form').reset();
+      document.getElementById('promo-code-orig').value = '';
+      document.getElementById('cancel-btn').style.display = 'none';
+      document.getElementById('form-title').textContent = 'Buat Promo Code';
+      document.getElementById('save-btn').textContent = 'Simpan';
+    });
+  </script>
+</AppShell>

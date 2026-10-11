@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Ollama">
+  <rect width="64" height="64" rx="14" fill="#15151a"/>
+  <path d="M32 14c-7 0-12 5.5-12 12.5 0 4 2 7.5 5 10v5h14v-5c3-2.5 5-6 5-10 0-7-5-12.5-12-12.5z" fill="#fff"/>
+  <circle cx="26" cy="27" r="2.5" fill="#15151a"/>
+  <circle cx="38" cy="27" r="2.5" fill="#15151a"/>
+</svg>

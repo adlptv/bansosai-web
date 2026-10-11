@@ -1,0 +1,226 @@
+/* ============================================================================
+ * bansosAI — dashboard/admin shell (tema gelap)
+ * ============================================================================
+ *
+ * Dipakai oleh /app/* dan /admin/*. Mengandalkan token --sb-* dari tokens.css.
+ * Sidebar tetap 264px di desktop dan menjadi drawer off-canvas di < 1024px.
+ * ========================================================================== */
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--sb-canvas);
+}
+
+/* ── Sidebar ───────────────────────────────────────────────────────────────── */
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sb-sm);
+  padding: var(--sb-lg) var(--sb-md);
+  border-right: 1px solid var(--sb-hairline);
+  background: var(--sb-canvas-soft);
+}
+
+.sidebar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sb-sm);
+  padding: var(--sb-sm) var(--sb-sm) var(--sb-md);
+  font-size: var(--sb-heading-md);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--sb-ink);
+}
+.sidebar-brand span { color: var(--sb-primary); }
+
+.sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+
+.sidebar-section {
+  padding: var(--sb-md) var(--sb-sm) var(--sb-xs);
+  font-size: var(--sb-micro);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sb-ink-mute);
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: var(--sb-md);
+  min-height: 40px;
+  padding: var(--sb-sm) var(--sb-md);
+  border-radius: var(--sb-r-sm);
+  font-size: var(--sb-caption);
+  font-weight: 500;
+  color: var(--sb-ink-mute);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.nav-link:hover { background: var(--sb-canvas-raised); color: var(--sb-ink); }
+.nav-link.active {
+  background: var(--sb-primary-tint);
+  color: var(--sb-ink);
+}
+.nav-link.active .nav-icon { color: var(--sb-primary); }
+.nav-icon { width: 18px; height: 18px; flex-shrink: 0; color: var(--sb-ink-mute); }
+.nav-link:hover .nav-icon { color: var(--sb-ink); }
+
+.sidebar-user {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sb-md);
+  padding: var(--sb-sm);
+  border: 1px solid var(--sb-hairline);
+  border-radius: var(--sb-r-md);
+  background: var(--sb-canvas-raised);
+}
+.sidebar-user .avatar {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--sb-r-full);
+  background: var(--sb-primary);
+  color: var(--sb-on-primary);
+  font-weight: 500;
+  font-size: var(--sb-caption);
+}
+.sidebar-user .who { min-width: 0; }
+.sidebar-user .who b { display: block; font-size: var(--sb-caption); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-user .who span { font-size: var(--sb-micro); color: var(--sb-ink-mute); }
+.sidebar-user form { margin-left: auto; }
+
+/* ── Konten utama ──────────────────────────────────────────────────────────── */
+
+.app-main { display: flex; flex-direction: column; min-width: 0; }
+
+.app-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: var(--sb-md);
+  padding: var(--sb-md) var(--sb-xl);
+  border-bottom: 1px solid var(--sb-hairline);
+  background: var(--sb-canvas);
+}
+.app-topbar h1 { margin: 0; font-size: var(--sb-heading-lg); letter-spacing: -0.02em; }
+.app-topbar .topbar-sub { margin: 0; font-size: var(--sb-micro); color: var(--sb-ink-mute); }
+
+.app-topbar-nav { display: flex; gap: var(--sb-lg); margin-left: auto; }
+.app-topbar-nav a { font-size: var(--sb-caption); color: var(--sb-ink-mute); }
+.app-topbar-nav a:hover { color: var(--sb-ink); }
+
+.sidebar-toggle {
+  display: none;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--sb-hairline-strong);
+  border-radius: var(--sb-r-sm);
+  background: var(--sb-canvas-raised);
+  color: var(--sb-ink);
+  cursor: pointer;
+}
+
+.app-content { flex: 1; padding: var(--sb-xl); min-width: 0; }
+
+.app-footer {
+  padding: var(--sb-lg) var(--sb-xl);
+  border-top: 1px solid var(--sb-hairline);
+  font-size: var(--sb-micro);
+  color: var(--sb-ink-mute);
+}
+
+/* ── Kartu & tabel dashboard ───────────────────────────────────────────────── */
+
+.dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--sb-lg); }
+.dash-card {
+  padding: var(--sb-lg);
+  border: 1px solid var(--sb-hairline);
+  border-radius: var(--sb-r-lg);
+  background: var(--sb-canvas-raised);
+}
+.dash-card h3 { margin: 0 0 var(--sb-sm); font-size: var(--sb-micro); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sb-ink-mute); }
+.dash-value { font-size: var(--sb-display-md); font-weight: 500; letter-spacing: var(--sb-display-md-ls); }
+.dash-card p { margin: var(--sb-sm) 0 0; font-size: var(--sb-caption); color: var(--sb-ink-mute); }
+
+.progress { height: 8px; border-radius: var(--sb-r-full); background: var(--sb-canvas-night); overflow: hidden; }
+.progress > span { display: block; height: 100%; background: var(--sb-primary); }
+
+.dash-table { width: 100%; border-collapse: collapse; font-size: var(--sb-caption); }
+.dash-table th, .dash-table td { padding: var(--sb-md) var(--sb-lg); text-align: left; border-bottom: 1px solid var(--sb-hairline); white-space: nowrap; }
+.dash-table th { color: var(--sb-ink-mute); font-weight: 500; background: var(--sb-canvas-night); }
+.dash-table tbody tr:hover td { background: var(--sb-canvas-night); }
+
+.pill {
+  display: inline-block;
+  padding: 2px var(--sb-sm);
+  border-radius: var(--sb-r-full);
+  font-size: var(--sb-micro);
+  font-weight: 500;
+  border: 1px solid var(--sb-hairline-strong);
+  background: var(--sb-canvas-raised);
+  color: var(--sb-ink);
+}
+.pill-ok { border-color: var(--sb-status-success); color: var(--sb-status-success); }
+.pill-err { border-color: var(--sb-status-danger); color: var(--sb-status-danger); }
+.pill-warn { border-color: var(--sb-status-warning); color: var(--sb-status-warning); }
+.pill-info { border-color: var(--sb-status-info); color: var(--sb-status-info); }
+
+/* ── Flash & tabel gaya pre-rebuild ────────────────────────────────────────── */
+
+.flash {
+  margin-bottom: var(--sb-lg);
+  padding: var(--sb-md) var(--sb-lg);
+  border: 1px solid var(--sb-hairline-strong);
+  border-left-width: 3px;
+  border-radius: var(--sb-r-sm);
+  background: var(--sb-canvas-raised);
+  color: var(--sb-ink);
+  font-size: var(--sb-caption);
+}
+.flash-warn { border-left-color: var(--sb-status-warning); }
+.flash-ok { border-left-color: var(--sb-status-success); }
+.flash-err { border-left-color: var(--sb-status-danger); }
+
+.table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table { width: 100%; border-collapse: collapse; font-size: var(--sb-caption); }
+.table th, .table td { padding: var(--sb-md) var(--sb-lg); text-align: left; border-bottom: 1px solid var(--sb-hairline); }
+.table th { color: var(--sb-ink-mute); font-weight: 500; background: var(--sb-canvas-night); white-space: nowrap; }
+.table tbody tr:hover td { background: var(--sb-canvas-night); }
+.table td.mono, .mono { font-family: var(--sb-font-mono); }
+
+/* Form controls inside dashboard cards. */
+.field-row { display: flex; gap: var(--sb-md); flex-wrap: wrap; align-items: flex-end; }
+.field-row > * { min-width: 0; }
+
+/* ── Responsif: sidebar jadi drawer di < 1024px ────────────────────────────── */
+
+@media (max-width: 1023.98px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 60;
+    width: 264px;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+  }
+  .sidebar[data-open='true'] { transform: translateX(0); }
+  .sidebar-toggle { display: inline-flex; }
+  .sidebar-overlay { position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, 0.6); }
+  .app-content, .app-topbar { padding-left: var(--sb-lg); padding-right: var(--sb-lg); }
+}

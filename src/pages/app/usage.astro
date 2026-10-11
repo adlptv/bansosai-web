@@ -1,0 +1,550 @@
+---
+// /app/usage — per-request token/latency detail with WIB day buckets.
+// Ported from the pre-rebuild compiled page: filters are parsed from the query
+// string, the summary and request pages are fetched server-side, and the daily
+// bar chart + request table are rendered with plain markup.
+import AppShell from '../../layouts/AppShell.astro';
+import Flash from '../../components/Flash.astro';
+import { getSessionUser, getToken } from '../../lib/api/session';
+import { apiGet } from '../../lib/api/saas';
+
+const user = await getSessionUser(Astro);
+if (!user) return Astro.redirect('/login');
+const token = getToken(Astro)!;
+
+// ── Filters (whitelisted, length-capped — mirrors the pre-rebuild parser) ────
+const WINDOW_KEYS = ['today', '7d', '30d'] as const;
+type WindowKey = (typeof WINDOW_KEYS)[number];
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_FILTER_LEN = 128;
+const clean = (value: string | null): string => {
+  const v = (value ?? '').trim();
+  return v.length > 0 && v.length <= MAX_FILTER_LEN ? v : '';
+};
+
+interface Filters {
+  from: string;
+  to: string;
+  model: string;
+  provider: string;
+  outcome: '' | 'success' | 'error';
+  window: WindowKey;
+  cursor: string;
+}
+
+function parseUsageFilters(params: URLSearchParams): Filters {
+  const from = clean(params.get('from'));
+  const to = clean(params.get('to'));
+  const outcome = clean(params.get('outcome'));
+  const window = clean(params.get('window'));
+  return {
+    from: DATE_RE.test(from) ? from : '',
+    to: DATE_RE.test(to) ? to : '',
+    model: clean(params.get('model')),
+    provider: clean(params.get('provider')),
+    outcome: outcome === 'success' || outcome === 'error' ? outcome : '',
+    window: (WINDOW_KEYS as readonly string[]).includes(window) ? (window as WindowKey) : '7d',
+    cursor: clean(params.get('cursor')),
+  };
+}
+
+function todayWib(now = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+}
+function addDaysWib(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y!, m! - 1, d! + days)).toISOString().slice(0, 10);
+}
+function windowRange(window: WindowKey, now = new Date()): { from: string; to: string } {
+  const to = todayWib(now);
+  const span = window === 'today' ? 1 : window === '7d' ? 7 : 30;
+  return { from: addDaysWib(to, -(span - 1)), to };
+}
+function filterParams(filters: Filters, now = new Date()): URLSearchParams {
+  const q = new URLSearchParams();
+  const range = windowRange(filters.window, now);
+  q.set('from', filters.from || range.from);
+  q.set('to', filters.to || range.to);
+  if (filters.model) q.set('model', filters.model);
+  if (filters.provider) q.set('provider', filters.provider);
+  if (filters.outcome) q.set('outcome', filters.outcome);
+  return q;
+}
+function requestsQuery(filters: Filters, cursor = ''): string {
+  const q = filterParams(filters);
+  if (cursor) q.set('cursor', cursor);
+  return `?${q.toString()}`;
+}
+function summaryQuery(filters: Filters): string {
+  return `?window=${filters.window}`;
+}
+function pageLink(filters: Filters, cursor: string): string {
+  const q = new URLSearchParams();
+  if (filters.from) q.set('from', filters.from);
+  if (filters.to) q.set('to', filters.to);
+  if (filters.model) q.set('model', filters.model);
+  if (filters.provider) q.set('provider', filters.provider);
+  if (filters.outcome) q.set('outcome', filters.outcome);
+  q.set('window', filters.window);
+  if (cursor) q.set('cursor', cursor);
+  return `/app/usage?${q.toString()}`;
+}
+
+// ── Response shapes ─────────────────────────────────────────────────────────
+interface Totals {
+  requests: number;
+  success: number;
+  errors: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  avgDurationMs: number;
+  p95DurationMs: number;
+}
+interface DayRow {
+  date: string;
+  requests: number;
+  errors: number;
+  tokens: number;
+}
+interface NameCount {
+  name: string;
+}
+interface StatusRow {
+  status: number;
+  requests: number;
+}
+interface WindowInfo {
+  from: string;
+  to: string;
+  tz: string;
+}
+interface UsageSummary {
+  totals: Totals;
+  byModel: NameCount[];
+  byProvider: NameCount[];
+  byStatus: StatusRow[];
+  days: DayRow[];
+  window: WindowInfo;
+  retentionDays: number;
+  partial: boolean;
+}
+interface RequestRow {
+  startedAt?: string;
+  startedAtWib?: string;
+  model?: string;
+  provider?: string;
+  endpoint?: string;
+  stream?: boolean;
+  status: number;
+  inputTokens: number;
+  outputTokens: number;
+  durationMs: number;
+  traceId?: string;
+}
+interface UsageRequests {
+  items: RequestRow[];
+  nextCursor: string;
+  window: WindowInfo;
+  retentionDays: number;
+  partial: boolean;
+}
+
+function emptySummary(): UsageSummary {
+  return {
+    totals: { requests: 0, success: 0, errors: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, avgDurationMs: 0, p95DurationMs: 0 },
+    byModel: [],
+    byProvider: [],
+    byStatus: [],
+    days: [],
+    window: { from: '', to: '', tz: 'Asia/Jakarta' },
+    retentionDays: 0,
+    partial: false,
+  };
+}
+function emptyRequests(): UsageRequests {
+  return { items: [], nextCursor: '', window: { from: '', to: '', tz: 'Asia/Jakarta' }, retentionDays: 0, partial: false };
+}
+
+// ── Formatting / chart helpers ──────────────────────────────────────────────
+const nf = new Intl.NumberFormat('id-ID');
+const fmtInt = (n: number | null | undefined): string => nf.format(Math.round(n || 0));
+function fmtDuration(ms: number | null | undefined): string {
+  if (!ms || ms <= 0) return '—';
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return `${(ms / 1000).toFixed(ms < 10000 ? 2 : 1)} s`;
+}
+function fmtWib(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+function upstreamErrorPct(totals: Totals): number {
+  if (!totals.requests) return 0;
+  return Math.round((totals.errors / totals.requests) * 1000) / 10;
+}
+function statusBadgeClass(status: number): string {
+  if (status >= 500) return 'badge badge-err';
+  if (status >= 400) return 'badge badge-warn';
+  if (status >= 200 && status < 300) return 'badge badge-ok';
+  return 'badge badge-accent';
+}
+function barHeight(tokens: number, maxTokens: number): number {
+  if (maxTokens <= 0) return 2;
+  return Math.max(2, Math.round((tokens / maxTokens) * 96));
+}
+function errorOverlayHeight(day: DayRow, maxTokens: number): number {
+  if (day.errors <= 0 || day.requests <= 0) return 0;
+  const total = barHeight(day.tokens, maxTokens);
+  return Math.min(total, Math.max(2, Math.round((day.errors / day.requests) * total)));
+}
+const maxDayTokens = (days: DayRow[]): number => days.reduce((max, d) => Math.max(max, d.tokens), 0);
+
+function linePoints(values: number[], opts: { height?: number; max?: number } = {}): string {
+  const height = opts.height ?? 100;
+  if (values.length === 0) return '';
+  const max = opts.max ?? Math.max(...values);
+  if (values.length === 1) return `0,${height / 2} 100,${height / 2}`;
+  const step = 100 / (values.length - 1);
+  return values
+    .map((v, i) => {
+      const x = i * step;
+      const y = max <= 0 ? height / 2 : height - (v / max) * height;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(' ');
+}
+
+type StatusClass = '4xx' | '5xx' | '429' | '401' | '403';
+const statusHit = (status: number, cls: StatusClass): boolean =>
+  cls === '4xx'
+    ? status >= 400 && status < 500
+    : cls === '5xx'
+      ? status >= 500
+      : cls === '429'
+        ? status === 429
+        : cls === '401'
+          ? status === 401
+          : status === 403;
+const hasStatusClass = (byStatus: StatusRow[], cls: StatusClass): boolean =>
+  byStatus.some((s) => s.requests > 0 && statusHit(s.status, cls));
+const statusClassCount = (byStatus: StatusRow[], cls: StatusClass): number =>
+  byStatus.reduce((sum, s) => (statusHit(s.status, cls) ? sum + s.requests : sum), 0);
+
+function limitsNote(retentionDays: number, partial: boolean): string {
+  const parts = [
+    'Waktu ditampilkan dalam WIB (Asia/Jakarta); hari dihitung dari 00:00 WIB, sama seperti reset kuota.',
+    'Permintaan yang ditolak sebelum diteruskan (401/403/429 — key tidak valid, kuota habis, atau rate limit) tidak tercatat, jadi tidak muncul di sini. Kolom error hanya berisi kegagalan dari provider.',
+    'IP, isi prompt/jawaban, dan pesan error provider tidak pernah disimpan.',
+  ];
+  if (retentionDays > 0) parts.push(`Riwayat tersimpan sekitar ${retentionDays} hari terakhir.`);
+  if (partial) parts.push('Rentang yang diminta lebih lama dari data yang tersedia — angka pada periode terjauh bisa tidak lengkap.');
+  return parts.join(' ');
+}
+
+// ── Fetch ───────────────────────────────────────────────────────────────────
+const filters = parseUsageFilters(Astro.url.searchParams);
+let summary = emptySummary();
+let requests = emptyRequests();
+let loadErr = '';
+try {
+  [summary, requests] = await Promise.all([
+    apiGet<UsageSummary>(`/saas/api/usage/summary${summaryQuery(filters)}`, token, Astro.request),
+    apiGet<UsageRequests>(`/saas/api/usage/requests${requestsQuery(filters, filters.cursor)}`, token, Astro.request),
+  ]);
+} catch (e) {
+  loadErr = e instanceof Error ? e.message : 'Gagal memuat data pemakaian';
+}
+
+const totals = summary.totals;
+const maxDay = maxDayTokens(summary.days);
+const errorPct = upstreamErrorPct(totals);
+const retentionDays = summary.retentionDays || requests.retentionDays;
+const partial = summary.partial || requests.partial;
+const modelOptions = summary.byModel.map((m) => m.name);
+const providerOptions = summary.byProvider.map((p) => p.name);
+const rows = requests.items;
+const paging = filters.cursor !== '';
+const requestSeries = summary.days.map((d) => d.requests);
+const errorSeries = summary.days.map((d) => d.errors);
+const tokenSeries = summary.days.map((d) => d.tokens);
+const seriesMax = Math.max(1, ...requestSeries, ...tokenSeries);
+const requestPoints = linePoints(requestSeries, { max: seriesMax });
+const errorPoints = linePoints(errorSeries, { max: seriesMax });
+const show429 = hasStatusClass(summary.byStatus, '429');
+const show4xx = hasStatusClass(summary.byStatus, '4xx');
+const show5xx = hasStatusClass(summary.byStatus, '5xx');
+const WINDOWS: { key: WindowKey; label: string }[] = [
+  { key: 'today', label: 'Hari ini' },
+  { key: '7d', label: '7 hari' },
+  { key: '30d', label: '30 hari' },
+];
+---
+
+<AppShell
+  title="Token Usage"
+  description="Riwayat pemakaian token per request untuk akun bansosAI kamu."
+  user={user}
+>
+  <section class="section">
+    <div class="container">
+      {loadErr && <Flash kind="err" message={loadErr} />}
+
+      <div class="page-header">
+        <h1>Token Usage</h1>
+        <p>Detail tiap request yang diteruskan ke provider, beserta token dan latensinya. Zona waktu WIB.</p>
+      </div>
+
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="card stat-card">
+          <div class="stat-label">Request</div>
+          <div class="stat-value">{fmtInt(totals.requests)}</div>
+          <p class="muted" style="font-size:13px">{fmtInt(totals.success)} sukses · {fmtInt(totals.errors)} gagal di provider</p>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-label">Total Token</div>
+          <div class="stat-value">{fmtInt(totals.totalTokens)}</div>
+          <p class="muted" style="font-size:13px">{fmtInt(totals.inputTokens)} masuk · {fmtInt(totals.outputTokens)} keluar</p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px">
+          <h3>Grafik Pemakaian</h3>
+          <span class="muted" style="font-size:12.5px">Per hari (WIB) · permintaan dan kegagalan provider</span>
+        </div>
+        {summary.days.length === 0 ? (
+          <p class="muted" style="font-size:14px">Belum ada pemakaian pada rentang ini.</p>
+        ) : (
+          <>
+            <svg
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              style="width:100%;height:140px;display:block"
+              role="img"
+              aria-label="Grafik permintaan dan kegagalan per hari"
+            >
+              <line x1="0" y1="100" x2="100" y2="100" stroke="var(--sb-hairline)" stroke-width="0.4" vector-effect="non-scaling-stroke"></line>
+              <polyline points={requestPoints} fill="none" stroke="var(--sb-primary)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"></polyline>
+              <polyline points={errorPoints} fill="none" stroke="var(--sb-status-danger)" stroke-width="1.6" vector-effect="non-scaling-stroke" stroke-linejoin="round"></polyline>
+            </svg>
+            <div style="display:flex;justify-content:space-between;gap:8px;margin-top:6px">
+              <span class="muted" style="font-size:10.5px">{summary.days[0]?.date.slice(5)}</span>
+              <span class="muted" style="font-size:10.5px">
+                <span style="color:var(--sb-primary)">■</span> permintaan ·
+                <span style="color:var(--sb-status-danger)">■</span> error provider
+              </span>
+              <span class="muted" style="font-size:10.5px">{summary.days[summary.days.length - 1]?.date.slice(5)}</span>
+            </div>
+          </>
+        )}
+        <div class="grid-2" style="margin-top:14px;gap:10px">
+          <div>
+            <div class="stat-label">Status 4xx</div>
+            <div class="stat-value" style="font-size:20px">{fmtInt(statusClassCount(summary.byStatus, '4xx'))}</div>
+            {show429 && <p class="muted" style="font-size:12px">termasuk {fmtInt(statusClassCount(summary.byStatus, '429'))} rate limit (429)</p>}
+          </div>
+          <div>
+            <div class="stat-label">Status 5xx</div>
+            <div class="stat-value" style="font-size:20px">{fmtInt(statusClassCount(summary.byStatus, '5xx'))}</div>
+            <p class="muted" style="font-size:12px">{show4xx || show5xx ? 'kegagalan di sisi server' : 'tidak ada pada rentang ini'}</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="card stat-card">
+          <div class="stat-label">Error Provider</div>
+          <div class="stat-value">{errorPct}%</div>
+          <p class="muted" style="font-size:13px">Tidak termasuk request yang ditolak sebelum diteruskan</p>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-label">Latensi p95</div>
+          <div class="stat-value">{fmtDuration(totals.p95DurationMs)}</div>
+          <p class="muted" style="font-size:13px">Rata-rata {fmtDuration(totals.avgDurationMs)}</p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px">
+          <h3>Pemakaian Harian (WIB)</h3>
+          <div style="display:flex;gap:6px">
+            {WINDOWS.map((w) => (
+              <a
+                href={pageLink({ ...filters, window: w.key }, '')}
+                class:list={['btn', 'btn-sm', filters.window === w.key ? 'btn-primary' : 'btn-ghost']}
+                aria-current={filters.window === w.key ? 'page' : undefined}
+              >{w.label}</a>
+            ))}
+          </div>
+        </div>
+        {summary.days.length === 0 ? (
+          <p class="muted" style="font-size:14px">Belum ada pemakaian pada rentang ini.</p>
+        ) : (
+          <div style="display:flex;align-items:flex-end;gap:6px;height:120px">
+            {summary.days.map((d) => (
+              <div
+                style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"
+                title={`${d.date}: ${fmtInt(d.tokens)} token · ${fmtInt(d.requests)} request · ${fmtInt(d.errors)} error`}
+              >
+                <div
+                  style={`width:100%;height:${barHeight(d.tokens, maxDay)}px;display:flex;flex-direction:column;justify-content:flex-end;border-radius:4px 4px 0 0;overflow:hidden;background:var(--sb-primary)`}
+                >
+                  <div style={`width:100%;height:${errorOverlayHeight(d, maxDay)}px;background:var(--sb-status-danger)`}></div>
+                </div>
+                <span class="muted" style="font-size:10px">{d.date.slice(5)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <form method="get" action="/app/usage" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+          <input type="hidden" name="window" value={filters.window} />
+          <div>
+            <label class="label" for="from">Dari</label>
+            <input class="input" type="date" id="from" name="from" value={filters.from} style="min-width:150px" />
+          </div>
+          <div>
+            <label class="label" for="to">Sampai</label>
+            <input class="input" type="date" id="to" name="to" value={filters.to} style="min-width:150px" />
+          </div>
+          <div>
+            <label class="label" for="model">Model</label>
+            <select class="input" id="model" name="model" style="min-width:170px">
+              <option value="">Semua model</option>
+              {modelOptions.map((m) => (
+                <option value={m} selected={filters.model === m}>{m}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label class="label" for="provider">Provider</label>
+            <select class="input" id="provider" name="provider" style="min-width:150px">
+              <option value="">Semua provider</option>
+              {providerOptions.map((p) => (
+                <option value={p} selected={filters.provider === p}>{p}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label class="label" for="outcome">Hasil</label>
+            <select class="input" id="outcome" name="outcome" style="min-width:140px">
+              <option value="">Semua</option>
+              <option value="success" selected={filters.outcome === 'success'}>Sukses</option>
+              <option value="error" selected={filters.outcome === 'error'}>Error provider</option>
+            </select>
+          </div>
+          <div class="form-actions" style="margin-top:0">
+            <button class="btn btn-primary" type="submit">Terapkan</button>
+            <a class="btn btn-ghost" href="/app/usage">Reset</a>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px">
+          <h3>Detail Request</h3>
+          <span class="muted" style="font-size:13px">
+            {requests.window.from} — {requests.window.to} ({requests.window.tz})
+          </span>
+        </div>
+        {rows.length === 0 ? (
+          <div class="empty-state">
+            <div class="icon">∅</div>
+            <p>{paging ? 'Tidak ada request lagi di halaman berikutnya.' : 'Belum ada request pada rentang dan filter ini.'}</p>
+            {!paging && (
+              <p class="muted" style="font-size:13px">
+                Buat key di <a href="/app/keys">API Keys</a>, lalu kirim request pertamamu.
+              </p>
+            )}
+          </div>
+        ) : (
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Waktu (WIB)</th>
+                  <th scope="col">Model</th>
+                  <th scope="col">Provider</th>
+                  <th scope="col">Endpoint</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Token (in/out)</th>
+                  <th scope="col">Latensi</th>
+                  <th scope="col">Trace ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr>
+                    <td>{fmtWib(row.startedAtWib || row.startedAt)}</td>
+                    <td>{row.model || '—'}</td>
+                    <td>{row.provider || '—'}</td>
+                    <td class="mono">{row.endpoint}{row.stream ? ' · stream' : ''}</td>
+                    <td><span class={statusBadgeClass(row.status)}>{row.status}</span></td>
+                    <td>{fmtInt(row.inputTokens)} / {fmtInt(row.outputTokens)}</td>
+                    <td>{fmtDuration(row.durationMs)}</td>
+                    <td class="mono">{row.traceId || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div class="form-actions">
+          {paging && <a class="btn btn-ghost btn-sm" href={pageLink({ ...filters }, '')}>Kembali ke terbaru</a>}
+          {requests.nextCursor && (
+            <a class="btn btn-ghost btn-sm" href={pageLink(filters, requests.nextCursor)}>Muat lebih banyak</a>
+          )}
+        </div>
+      </div>
+
+      <p class="muted" style="font-size:13px;margin-top:16px;line-height:1.6">{limitsNote(retentionDays, partial)}</p>
+    </div>
+  </section>
+</AppShell>
+
+<style is:global>
+  .card {
+    padding: var(--sb-lg);
+    background: var(--sb-canvas-raised);
+    border: 1px solid var(--sb-hairline);
+    border-radius: var(--sb-r-lg);
+    box-shadow: var(--sb-elev-1);
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sb-xs);
+    padding: 2px var(--sb-sm);
+    border: 1px solid var(--sb-hairline-strong);
+    border-radius: var(--sb-r-full);
+    background: var(--sb-canvas-raised);
+    color: var(--sb-ink);
+    font-size: var(--sb-micro);
+    font-weight: 500;
+  }
+  .badge-accent { border-color: var(--sb-primary); color: var(--sb-primary); }
+  .badge-ok { border-color: var(--sb-status-success); color: var(--sb-status-success); }
+  .badge-warn { border-color: var(--sb-status-warning); color: var(--sb-status-warning); }
+  .badge-err { border-color: var(--sb-status-danger); color: var(--sb-status-danger); }
+  .stat-card { border-radius: var(--sb-r-md); }
+  .stat-label { font-size: var(--sb-caption); color: var(--sb-ink-mute); }
+  .stat-value { font-size: var(--sb-display-md); font-weight: 500; letter-spacing: var(--sb-display-md-ls); }
+  .empty-state { text-align: center; padding: 48px 20px; color: var(--sb-ink-secondary); }
+  .empty-state .icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
+</style>

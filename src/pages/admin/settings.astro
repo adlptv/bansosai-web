@@ -1,0 +1,422 @@
+---
+// /admin/settings — system health, routing config, subscription defaults and
+// global settings. Server-gated; the client calls /api/console/* with the
+// console JWT as Bearer.
+import AppShell from '../../layouts/AppShell.astro';
+import { requireAdminPage } from '../../lib/api/admin';
+import { getSessionUser } from '../../lib/api/session';
+
+const gate = await requireAdminPage(Astro);
+if (gate) return gate;
+
+const user = await getSessionUser(Astro);
+---
+
+<AppShell
+  title="Settings & Health"
+  subtitle="Monitor system health, konfigurasi routing per provider, dan global settings."
+  user={user}
+>
+  <div id="admin-content">
+    <!-- System Health -->
+    <div class="card" style="margin-bottom:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h3>System Health</h3>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="loadHealth()">Refresh</button>
+          <button class="btn btn-danger btn-sm" onclick="forceGC()">Force GC</button>
+        </div>
+      </div>
+      <div id="health-wrap">
+        <p class="muted">Memuat...</p>
+      </div>
+      <div id="gc-result" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- Routing Config -->
+    <div class="card" style="margin-bottom:24px;">
+      <h3 style="margin-bottom:16px;">Routing Config</h3>
+      <div id="routing-wrap" class="table-wrap">
+        <p class="muted">Memuat...</p>
+      </div>
+    </div>
+
+    <!-- Subscription Defaults -->
+    <div class="card" style="margin-bottom:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h3>Subscription Defaults</h3>
+        <button class="btn btn-ghost btn-sm" onclick="loadSubDefaults()">Refresh</button>
+      </div>
+      <p class="muted" style="margin-bottom:16px;">Default settings untuk subscription baru dan plan free.</p>
+      <div id="sub-defaults-wrap">
+        <p class="muted">Memuat...</p>
+      </div>
+      <div style="margin-top:16px;display:flex;gap:12px;align-items:center;">
+        <button class="btn btn-primary" onclick="saveSubDefaults()">Save Defaults</button>
+        <span id="sub-defaults-msg"></span>
+      </div>
+    </div>
+
+    <!-- Global Settings -->
+    <div class="card">
+      <h3 style="margin-bottom:16px;">Global Settings</h3>
+      <div id="settings-wrap">
+        <p class="muted">Memuat...</p>
+      </div>
+      <div style="margin-top:16px;">
+        <label class="label">Settings JSON</label>
+        <textarea id="settings-json" class="input mono" rows="10" placeholder='{"key": "value"}'></textarea>
+        <div style="margin-top:12px;display:flex;gap:12px;align-items:center;">
+          <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+          <span id="settings-msg"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style is:global>
+    .card {
+      padding: var(--sb-lg);
+      background: var(--sb-canvas-raised);
+      border: 1px solid var(--sb-hairline);
+      border-radius: var(--sb-r-lg);
+      box-shadow: var(--sb-elev-1);
+    }
+    .table { width: 100%; border-collapse: collapse; font-size: var(--sb-caption); }
+    .table th,
+    .table td {
+      padding: var(--sb-md) var(--sb-lg);
+      text-align: left;
+      vertical-align: middle;
+      border-bottom: 1px solid var(--sb-hairline);
+    }
+    .table th { color: var(--sb-ink-mute); font-weight: 500; background: var(--sb-canvas-night); }
+    .table tbody tr:hover td { background: var(--sb-canvas-night); }
+    .table-wrap { width: 100%; overflow-x: auto; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sb-lg); }
+    .stat-card { padding: var(--sb-lg); border: 1px solid var(--sb-hairline); border-radius: var(--sb-r-md); background: var(--sb-canvas-raised); }
+    .stat-value { font-size: var(--sb-display-md); font-weight: 500; letter-spacing: var(--sb-display-md-ls); }
+    .stat-label { font-size: var(--sb-caption); color: var(--sb-ink-mute); }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sb-xs);
+      padding: 2px var(--sb-sm);
+      border: 1px solid var(--sb-hairline-strong);
+      border-radius: var(--sb-r-full);
+      background: var(--sb-canvas-raised);
+      color: var(--sb-ink);
+      font-size: var(--sb-micro);
+      font-weight: 500;
+    }
+    .badge-green { border-color: var(--sb-status-success); color: var(--sb-status-success); }
+    .badge-red { border-color: var(--sb-status-danger); color: var(--sb-status-danger); }
+    .flash { padding: var(--sb-md) var(--sb-lg); border: 1px solid var(--sb-hairline-strong); border-left-width: 3px; border-radius: var(--sb-r-sm); background: var(--sb-canvas-raised); font-size: var(--sb-caption); }
+    .flash-ok { border-left-color: var(--sb-status-success); }
+    .flash-err { border-left-color: var(--sb-status-danger); }
+    .btn-danger { background: var(--sb-canvas-raised); border-color: var(--sb-status-danger); color: var(--sb-status-danger); }
+    .btn-danger:hover { background: var(--sb-status-danger); color: var(--sb-on-primary); }
+  </style>
+
+  <script is:inline>
+    window.adminSession = (function () {
+      var NAME = 'console_jwt';
+      var MAX_AGE = 12 * 3600;
+      function get() {
+        var parts = String(document.cookie || '').split(';');
+        for (var i = 0; i < parts.length; i++) {
+          var pair = parts[i].trim();
+          if (pair.indexOf(NAME + '=') === 0) return decodeURIComponent(pair.slice(NAME.length + 1));
+        }
+        return '';
+      }
+      function set(token) {
+        if (!token) return;
+        var attrs = '; Path=/; SameSite=Lax; Max-Age=' + MAX_AGE;
+        if (location.protocol === 'https:') attrs += '; Secure';
+        document.cookie = NAME + '=' + encodeURIComponent(token) + attrs;
+      }
+      function clear() { document.cookie = NAME + '=; Path=/; SameSite=Lax; Max-Age=0'; }
+      return { get: get, set: set, clear: clear };
+    })();
+  </script>
+
+  <script is:inline>
+    let token = window.adminSession.get();
+    // The page is gated server-side: reaching this script means the gateway
+    // already verified the console token.
+    showContent();
+
+    function showContent() {
+      loadHealth();
+      loadRouting();
+      loadSettings();
+      loadSubDefaults();
+    }
+
+    function handleAuthErr(e) {
+      if ((e.message || '').indexOf('401') >= 0 || (e.message || '').indexOf('Unauthorized') >= 0) {
+        window.adminSession.clear();
+        token = '';
+        window.location.href = '/login?err=' + encodeURIComponent('Sesi admin berakhir, login ulang.');
+        return true;
+      }
+      return false;
+    }
+
+    async function loadHealth() {
+      const wrap = document.getElementById('health-wrap');
+      try {
+        const resp = await fetch('/api/console/health/metrics', {
+          headers: { 'authorization': 'Bearer ' + token },
+        });
+        if (resp.status === 401) throw new Error('401 Unauthorized');
+        const data = await resp.json();
+        const fmtUptime = function (s) {
+          if (s == null) return '—';
+          s = Number(s);
+          const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+          return d > 0 ? d + 'd ' + h + 'h ' + m + 'm' : h > 0 ? h + 'h ' + m + 'm' : m + 'm ' + Math.floor(s % 60) + 's';
+        };
+        wrap.innerHTML = '<div class="stat-grid">' +
+          '<div class="stat-card"><div class="stat-value">' + fmtUptime(data.uptime ?? data.uptimeSeconds) + '</div><div class="stat-label">Uptime</div></div>' +
+          '<div class="stat-card"><div class="stat-value">' + (data.memoryMB ?? data.memoryMb ?? '—') + ' MB</div><div class="stat-label">Memory</div></div>' +
+          '<div class="stat-card"><div class="stat-value">' + (data.goroutines ?? '—') + '</div><div class="stat-label">Goroutines</div></div>' +
+          '<div class="stat-card"><div class="stat-value">' + (data.numCPU ?? data.numCpu ?? '—') + '</div><div class="stat-label">CPUs</div></div>' +
+          '<div class="stat-card"><div class="stat-value mono" style="font-size:14px;">' + (data.goVersion ?? '—') + '</div><div class="stat-label">Go Version</div></div>' +
+        '</div>';
+      } catch (e) {
+        if (handleAuthErr(e)) return;
+        wrap.innerHTML = '<div class="flash flash-err">Gagal memuat health: ' + e.message + '</div>';
+      }
+    }
+    window.loadHealth = loadHealth;
+
+    async function forceGC() {
+      const el = document.getElementById('gc-result');
+      el.innerHTML = '<span class="muted">Running GC...</span>';
+      try {
+        const resp = await fetch('/api/console/health/gc', {
+          method: 'POST',
+          headers: { 'authorization': 'Bearer ' + token },
+        });
+        if (resp.status === 401) throw new Error('401 Unauthorized');
+        if (resp.ok) {
+          el.innerHTML = '<div class="flash flash-ok">GC triggered successfully</div>';
+          loadHealth();
+        } else {
+          el.innerHTML = '<div class="flash flash-err">GC gagal</div>';
+        }
+      } catch (e) {
+        if (handleAuthErr(e)) return;
+        el.innerHTML = '<div class="flash flash-err">Error: ' + e.message + '</div>';
+      }
+    }
+    window.forceGC = forceGC;
+
+    async function loadRouting() {
+      const wrap = document.getElementById('routing-wrap');
+      try {
+        const resp = await fetch('/api/console/routing', {
+          headers: { 'authorization': 'Bearer ' + token },
+        });
+        if (resp.status === 401) throw new Error('401 Unauthorized');
+        const data = await resp.json();
+        const items = data.items ?? data.providers ?? [];
+        if (items.length === 0) {
+          wrap.innerHTML = '<p class="muted">Belum ada routing config.</p>';
+          return;
+        }
+        wrap.innerHTML = '<table class="table">' +
+          '<thead><tr><th>Provider</th><th>Strategy</th><th>Sticky Limit</th><th>Proxy Mode</th><th>Enabled</th><th>Aksi</th></tr></thead>' +
+          '<tbody>' + items.map(function (r) {
+            const p = r.provider ?? r.name;
+            return '<tr data-provider="' + p + '">' +
+              '<td><code class="mono" style="color:var(--sb-primary);">' + p + '</code></td>' +
+              '<td><select class="input input-sm routing-strategy" style="padding:4px 8px;font-size:13px;">' +
+                '<option value="fallback"' + (r.strategy === 'fallback' ? ' selected' : '') + '>fallback</option>' +
+                '<option value="round-robin"' + (r.strategy === 'round-robin' ? ' selected' : '') + '>round-robin</option>' +
+                '<option value="priority"' + (r.strategy === 'priority' ? ' selected' : '') + '>priority</option>' +
+              '</select></td>' +
+              '<td><input type="number" class="input input-sm routing-sticky" value="' + (r.stickyLimit ?? '') + '" min="0" style="width:80px;padding:4px 8px;font-size:13px;" /></td>' +
+              '<td><select class="input input-sm routing-proxy" style="padding:4px 8px;font-size:13px;">' +
+                '<option value="off"' + ((r.proxyMode ?? 'off') === 'off' ? ' selected' : '') + '>off</option>' +
+                '<option value="on"' + (r.proxyMode === 'on' ? ' selected' : '') + '>on</option>' +
+                '<option value="auto"' + (r.proxyMode === 'auto' ? ' selected' : '') + '>auto</option>' +
+              '</select></td>' +
+              '<td><input type="checkbox" class="routing-enabled"' + (r.enabled !== false ? ' checked' : '') + ' /></td>' +
+              '<td><button class="btn btn-primary btn-sm routing-save" data-provider="' + p + '">Save</button></td>' +
+            '</tr>';
+          }).join('') + '</tbody></table>';
+        document.querySelectorAll('.routing-save').forEach(function (btn) {
+          btn.addEventListener('click', function () { saveRouting(btn.dataset.provider); });
+        });
+      } catch (e) {
+        if (handleAuthErr(e)) return;
+        wrap.innerHTML = '<div class="flash flash-err">Gagal memuat routing: ' + e.message + '</div>';
+      }
+    }
+
+    async function saveRouting(provider) {
+      const row = document.querySelector('tr[data-provider="' + provider + '"]');
+      if (!row) return;
+      const body = {
+        strategy: row.querySelector('.routing-strategy').value,
+        stickyLimit: parseInt(row.querySelector('.routing-sticky').value, 10) || 0,
+        proxyMode: row.querySelector('.routing-proxy').value,
+        enabled: row.querySelector('.routing-enabled').checked,
+      };
+      try {
+        const resp = await fetch('/api/console/routing/' + encodeURIComponent(provider), {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + token },
+          body: JSON.stringify(body),
+        });
+        if (resp.status === 401) throw new Error('401 Unauthorized');
+        if (resp.ok) {
+          loadRouting();
+        } else {
+          const data = await resp.json().catch(function () { return {}; });
+          alert((data && data.error && data.error.message) || 'Gagal menyimpan routing');
+        }
+      } catch (e) {
+        if (handleAuthErr(e)) return;
+        alert('Error: ' + e.message);
+      }
+    }
+
+    async function loadSettings() {
+      try {
+        const resp = await fetch('/api/console/settings', {
+          headers: { 'authorization': 'Bearer ' + token },
+        });
+        if (resp.status === 401) throw new Error('401 Unauthorized');
+        const data = await resp.json();
+        document.getElementById('settings-json').value = JSON.stringify(data, null, 2);
+        document.getElementById('settings-wrap').innerHTML = '<p class="muted">Edit JSON di bawah lalu klik Save Settings.</p>';
+      } catch (e) {
+        if (handleAuthErr(e)) return;
+        document.getElementById('settings-wrap').innerHTML = '<div class="flash flash-err">Gagal memuat settings: ' + e.message + '</div>';
+      }
+    }
+
+    async function saveSettings() {
+      const msg = document.getElementById('settings-msg');
+      let body;
+      try {
+        body = JSON.parse(document.getElementById('settings-json').value);
+      } catch (e) {
+        msg.innerHTML = '<span class="badge badge-red">Invalid JSON</span>';
+        return;
+      }
+      try {
+        const resp = await fetch('/api/console/settings', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + token },
+          body: JSON.stringify(body),
+        });
+        if (resp.status === 401) throw new Error('401 Unauthorized');
+        if (resp.ok) {
+          msg.innerHTML = '<span class="badge badge-green">Saved</span>';
+          setTimeout(function () { msg.innerHTML = ''; }, 3000);
+        } else {
+          const data = await resp.json().catch(function () { return {}; });
+          msg.innerHTML = '<span class="badge badge-red">' + ((data && data.error && data.error.message) || 'Save gagal') + '</span>';
+        }
+      } catch (e) {
+        if (handleAuthErr(e)) return;
+        msg.innerHTML = '<span class="badge badge-red">Error: ' + e.message + '</span>';
+      }
+    }
+
+    // ── Subscription Defaults ───────────────────────────────────────────────
+    async function loadSubDefaults() {
+      const wrap = document.getElementById('sub-defaults-wrap');
+      try {
+        const resp = await fetch('/api/console/settings', {
+          headers: { 'authorization': 'Bearer ' + token },
+        });
+        if (resp.status === 401) throw new Error('401 Unauthorized');
+        const data = await resp.json();
+        const sub = data.subscription ?? data.sub ?? {};
+        const defPlan = sub.defaultPlan ?? sub.default_plan ?? 'free';
+        const freeDays = sub.freeDurationDays ?? sub.free_duration_days ?? 1;
+        const freeQuota = sub.freeTokenQuota ?? sub.free_token_quota ?? 10000;
+        const allowReg = sub.allowRegistration ?? sub.allow_registration ?? true;
+        const maxKeys = sub.maxApiKeys ?? sub.max_api_keys ?? 5;
+        const trialPlan = sub.trialPlan ?? sub.trial_plan ?? 'pro';
+        const trialDays = sub.trialDays ?? sub.trial_days ?? 7;
+
+        wrap.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;">' +
+          '<div><label class="label">Default Plan (new users)</label>' +
+            '<select id="sd-default-plan" class="input" style="width:100%;">' +
+              '<option value="free"' + (defPlan === 'free' ? ' selected' : '') + '>Free</option>' +
+              '<option value="pro"' + (defPlan === 'pro' ? ' selected' : '') + '>Pro</option>' +
+              '<option value="premium"' + (defPlan === 'premium' ? ' selected' : '') + '>Premium</option>' +
+              '<option value="enterprise"' + (defPlan === 'enterprise' ? ' selected' : '') + '>Enterprise</option>' +
+            '</select></div>' +
+          '<div><label class="label">Free Plan Duration (days)</label>' +
+            '<input type="number" id="sd-free-days" class="input" value="' + freeDays + '" min="1" style="width:100%;" /></div>' +
+          '<div><label class="label">Free Token Quota</label>' +
+            '<input type="number" id="sd-free-quota" class="input" value="' + freeQuota + '" min="0" style="width:100%;" /></div>' +
+          '<div><label class="label">Max API Keys per User</label>' +
+            '<input type="number" id="sd-max-keys" class="input" value="' + maxKeys + '" min="1" style="width:100%;" /></div>' +
+          '<div><label class="label">Trial Plan</label>' +
+            '<select id="sd-trial-plan" class="input" style="width:100%;">' +
+              '<option value="none"' + (trialPlan === 'none' ? ' selected' : '') + '>None (no trial)</option>' +
+              '<option value="pro"' + (trialPlan === 'pro' ? ' selected' : '') + '>Pro</option>' +
+              '<option value="premium"' + (trialPlan === 'premium' ? ' selected' : '') + '>Premium</option>' +
+            '</select></div>' +
+          '<div><label class="label">Trial Duration (days)</label>' +
+            '<input type="number" id="sd-trial-days" class="input" value="' + trialDays + '" min="0" style="width:100%;" /></div>' +
+          '<div style="display:flex;align-items:center;gap:8px;padding-top:20px;">' +
+            '<input type="checkbox" id="sd-allow-reg"' + (allowReg !== false ? ' checked' : '') + ' />' +
+            '<label for="sd-allow-reg" class="label" style="margin:0;">Allow New Registrations</label></div>' +
+        '</div>';
+      } catch (e) {
+        if (handleAuthErr(e)) return;
+        wrap.innerHTML = '<div class="flash flash-err">Gagal memuat defaults: ' + e.message + '</div>';
+      }
+    }
+    window.loadSubDefaults = loadSubDefaults;
+
+    async function saveSubDefaults() {
+      const msg = document.getElementById('sub-defaults-msg');
+      msg.innerHTML = '<span class="muted">Menyimpan...</span>';
+
+      const patch = {
+        subscription: {
+          defaultPlan: (document.getElementById('sd-default-plan') || {}).value || 'free',
+          freeDurationDays: parseInt((document.getElementById('sd-free-days') || {}).value, 10) || 1,
+          freeTokenQuota: parseInt((document.getElementById('sd-free-quota') || {}).value, 10) || 0,
+          maxApiKeys: parseInt((document.getElementById('sd-max-keys') || {}).value, 10) || 5,
+          trialPlan: (document.getElementById('sd-trial-plan') || {}).value || 'none',
+          trialDays: parseInt((document.getElementById('sd-trial-days') || {}).value, 10) || 0,
+          allowRegistration: (document.getElementById('sd-allow-reg') || {}).checked ?? true,
+        },
+      };
+
+      try {
+        const resp = await fetch('/api/console/settings', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + token },
+          body: JSON.stringify(patch),
+        });
+        if (resp.status === 401) throw new Error('401 Unauthorized');
+        if (resp.ok) {
+          msg.innerHTML = '<span class="badge badge-green">Saved</span>';
+          setTimeout(function () { msg.innerHTML = ''; }, 3000);
+        } else {
+          const data = await resp.json().catch(function () { return {}; });
+          msg.innerHTML = '<span class="badge badge-red">' + ((data && data.error && data.error.message) || 'Save gagal') + '</span>';
+        }
+      } catch (e) {
+        if (handleAuthErr(e)) return;
+        msg.innerHTML = '<span class="badge badge-red">Error: ' + e.message + '</span>';
+      }
+    }
+    window.saveSubDefaults = saveSubDefaults;
+
+    window.saveSettings = saveSettings;
+  </script>
+</AppShell>

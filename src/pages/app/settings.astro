@@ -1,0 +1,166 @@
+---
+// /app/settings — account info, referral link, password change, active sessions.
+// Ported from the pre-rebuild compiled page. Sessions and referral are read
+// through the signed gateway client; the two forms POST to same-origin routes.
+import AppShell from '../../layouts/AppShell.astro';
+import Flash from '../../components/Flash.astro';
+import { getSessionUser, getToken } from '../../lib/api/session';
+import { apiGet } from '../../lib/api/saas';
+
+const user = await getSessionUser(Astro);
+if (!user) return Astro.redirect('/login');
+const token = getToken(Astro)!;
+
+interface SessionRow {
+  id: string;
+  ua?: string;
+  ip?: string;
+  createdAt: string;
+  current?: boolean;
+}
+interface ReferralInfo {
+  url: string;
+  referred: number;
+}
+
+let sessions: SessionRow[] = [];
+let referral: ReferralInfo | null = null;
+try {
+  const s = await apiGet<{ sessions?: SessionRow[] }>('/saas/api/sessions', token, Astro.request);
+  sessions = s.sessions ?? [];
+} catch {
+  /* sessions are optional; the page still renders the account card */
+}
+try {
+  referral = await apiGet<ReferralInfo>('/saas/api/referral', token, Astro.request);
+} catch {
+  /* referral program may be disabled for this account */
+}
+
+const msg = Astro.url.searchParams.get('msg');
+const err = Astro.url.searchParams.get('err');
+const fmtDate = (iso: string) => new Date(iso).toLocaleString('id-ID');
+---
+
+<AppShell title="Settings" user={user}>
+  <section class="section">
+    <div class="container" style="max-width:640px">
+      {msg && <Flash kind="ok" message={msg} />}
+      {err && <Flash kind="err" message={err} />}
+
+      <div class="card" style="margin-bottom:16px">
+        <h3 style="margin-bottom:12px">Akun</h3>
+        <div class="table-wrap">
+          <table class="table">
+            <tbody>
+              <tr><td class="muted">Email</td><td>{user.email}</td></tr>
+              <tr><td class="muted">Terdaftar</td><td>{user.createdAt ? fmtDate(user.createdAt) : '—'}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {referral && (
+        <div class="card" style="margin-bottom:16px">
+          <h3 style="margin-bottom:8px">Referral</h3>
+          <p class="muted" style="font-size:13px">Ajak teman — reward diatur admin. Link kamu:</p>
+          <div class="keybox"><span class="mono">{referral.url}</span></div>
+          <p class="muted" style="font-size:13px">Teman yang daftar via link: <b>{referral.referred}</b></p>
+        </div>
+      )}
+
+      <div class="card" style="margin-bottom:16px">
+        <h3 style="margin-bottom:12px">Ganti Password</h3>
+        <form method="POST" action="/api/change-password">
+          <label class="label">Password Lama</label>
+          <input class="input" type="password" name="currentPassword" required autocomplete="current-password" />
+          <label class="label" style="margin-top:10px">Password Baru</label>
+          <input class="input" type="password" name="newPassword" required minlength="8" autocomplete="new-password" />
+          <p class="muted" style="font-size:12px;margin-top:4px">Min 8 karakter, huruf+angka. Perangkat lain akan logout otomatis.</p>
+          <div class="form-actions"><button class="btn btn-primary" type="submit">Simpan</button></div>
+        </form>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Perangkat</th><th>IP</th><th>Login</th><th></th></tr></thead>
+          <tbody>
+            {sessions.map((s) => (
+              <tr>
+                <td style="font-size:13px">
+                  {s.ua || 'Unknown'}
+                  {s.current && <span class="badge badge-ok" style="margin-left:6px">sesi ini</span>}
+                </td>
+                <td class="mono" style="font-size:12px">{s.ip}</td>
+                <td class="muted" style="font-size:12px">{fmtDate(s.createdAt)}</td>
+                <td>
+                  {!s.current && (
+                    <button class="btn btn-danger btn-sm" data-revoke-session={s.id}>Logout</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-bottom:12px">Sesi Ini</h3>
+        <form method="POST" action="/api/logout">
+          <button type="submit" class="btn btn-danger">Logout</button>
+        </form>
+      </div>
+    </div>
+  </section>
+</AppShell>
+
+<style is:global>
+  .card {
+    padding: var(--sb-lg);
+    background: var(--sb-canvas-raised);
+    border: 1px solid var(--sb-hairline);
+    border-radius: var(--sb-r-lg);
+    box-shadow: var(--sb-elev-1);
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sb-xs);
+    padding: 2px var(--sb-sm);
+    border: 1px solid var(--sb-hairline-strong);
+    border-radius: var(--sb-r-full);
+    background: var(--sb-canvas-raised);
+    color: var(--sb-ink);
+    font-size: var(--sb-micro);
+    font-weight: 500;
+  }
+  .badge-ok { border-color: var(--sb-status-success); color: var(--sb-status-success); }
+  .keybox {
+    background: var(--sb-canvas-night);
+    border: 1px solid var(--sb-hairline);
+    border-radius: var(--sb-r-sm);
+    padding: 14px;
+    margin: 12px 0;
+    word-break: break-all;
+  }
+</style>
+
+<script is:inline>
+  // Revoke another session: DELETE /api/revoke-session?id=… then reload.
+  document.querySelectorAll('[data-revoke-session]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var id = btn.getAttribute('data-revoke-session') || '';
+      if (!id) return;
+      btn.setAttribute('disabled', 'true');
+      fetch('/api/revoke-session?id=' + encodeURIComponent(id), { method: 'DELETE' })
+        .then(function (resp) {
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          location.reload();
+        })
+        .catch(function () {
+          btn.removeAttribute('disabled');
+          alert('Gagal logout perangkat ini. Coba lagi.');
+        });
+    });
+  });
+</script>

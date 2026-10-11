@@ -1,0 +1,321 @@
+---
+// /admin/users — user management: ban/unban, plan, reset password, delete.
+//
+// Ported from the pre-rebuild compiled page (admin/users.astro.mjs). Gated
+// server-side; the client script calls /api/console/* with the console JWT.
+import AppShell from '../../layouts/AppShell.astro';
+import { requireAdminPage } from '../../lib/api/admin';
+import '../../styles/admin.css';
+
+const gate = await requireAdminPage(Astro);
+if (gate) return gate;
+---
+
+<AppShell title="Users">
+  <h1 style="margin-bottom:8px;">User Management</h1>
+  <p class="muted" style="margin-bottom:24px;">
+    Kelola pengguna: ban/unban, ubah plan, reset password, atau hapus akun.
+  </p>
+
+  <div id="admin-content">
+    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+      <input type="text" id="search-input" class="input" placeholder="Cari email..." style="flex:1;max-width:300px;" />
+      <button class="btn" id="refresh-btn">🔄 Refresh</button>
+    </div>
+
+    <div id="load-err"></div>
+
+    <div class="card">
+      <h3 style="margin-bottom:16px;">Daftar Pengguna</h3>
+      <div id="users-table-wrap" class="table-wrap">
+        <p class="muted">Memuat...</p>
+      </div>
+    </div>
+
+    <div id="user-modal" class="modal-overlay" style="display:none;">
+      <div class="modal-content card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <h3 id="modal-title">Detail User</h3>
+          <button class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button>
+        </div>
+        <div id="modal-body">
+          <p class="muted">Memuat...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</AppShell>
+
+<script is:inline src="/js/admin-session.js"></script>
+<script is:inline>
+  let token = window.adminSession.get();
+  let allUsers = [];
+
+  // The page is gated server-side: reaching this script means the gateway
+  let usersPoller = null;
+
+  // already verified the console token. The client only needs the token to
+  // authorize its own /api/console/* calls.
+  showContent();
+
+  function showContent() {
+    loadUsers();
+    // Realtime polling — refresh user list every 30s
+    if (usersPoller) clearInterval(usersPoller);
+    usersPoller = setInterval(() => { loadUsers(); }, 30000);
+  }
+
+  function logout() {
+    window.adminSession.clear();
+    token = '';
+    window.location.href = '/login?err=' + encodeURIComponent('Sesi admin berakhir, login ulang.');
+  }
+
+  function formatNum(n) {
+    if (n === undefined || n === null) return '—';
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+    return String(n);
+  }
+
+  function formatDate(d) {
+    if (!d) return '—';
+    return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  // Escape every value that reaches innerHTML. The API KEY NAME is fully
+  // user-controlled (POST /saas/api/keys accepts up to 64 characters verbatim),
+  // so rendering it raw made this page a stored-XSS sink: a user could name a
+  // key `<img src=x onerror=...>` and run script in the admin's session, where
+  // the console token is readable by scripts and grants full admin API access.
+  function escapeHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  }
+
+  async function loadUsers() {
+    try {
+      const resp = await fetch(`/api/console/saas/users`, {
+        headers: { 'authorization': `Bearer ${token}` },
+      });
+      if (resp.status === 401) return logout();
+      const data = await resp.json();
+      allUsers = data.items ?? data.users ?? [];
+      renderUsers(allUsers);
+    } catch (e) {
+      if (e.message?.includes('401')) return logout();
+      document.getElementById('load-err').innerHTML = `<div class="flash flash-err">Gagal memuat: ${e.message}</div>`;
+    }
+  }
+
+  function renderUsers(users) {
+    const wrap = document.getElementById('users-table-wrap');
+    if (users.length === 0) {
+      wrap.innerHTML = '<p class="muted">Tidak ada pengguna.</p>';
+      return;
+    }
+    wrap.innerHTML = `<table class="table">
+      <thead><tr>
+        <th>Email</th>
+        <th>Status</th>
+        <th>Plan</th>
+        <th>Keys</th>
+        <th>Tokens</th>
+        <th>Terdaftar</th>
+        <th>Login Terakhir</th>
+        <th>Aksi</th>
+      </tr></thead>
+      <tbody>${users.map(u => `<tr data-id="${u.id}">
+        <td>
+          <a href="#" class="user-link" data-id="${u.id}" style="color:var(--sb-primary);">${u.email}</a>
+        </td>
+        <td>
+          <span class="badge ${u.status === 'active' ? 'badge-green' : u.status === 'banned' ? 'badge-red' : 'badge-orange'}">${u.status || 'active'}</span>
+        </td>
+        <td>${u.plan || 'free'}</td>
+        <td>${u.keysCount ?? u.keys_count ?? 0}</td>
+        <td>${formatNum(u.tokensUsed ?? u.tokens_used)}</td>
+        <td class="muted">${formatDate(u.createdAt ?? u.created_at)}</td>
+        <td class="muted">${formatDate(u.lastLoginAt ?? u.last_login_at)}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-ghost btn-sm detail-btn" data-id="${u.id}" title="Detail">👁</button>
+          <button class="btn btn-ghost btn-sm ban-btn" data-id="${u.id}" data-status="${u.status || 'active'}" title="${u.status === 'banned' ? 'Unban' : 'Ban'}">
+            ${u.status === 'banned' ? '✓' : '🚫'}
+          </button>
+          <select class="btn btn-ghost btn-sm plan-select" data-id="${u.id}" style="padding:4px;">
+            <option value="free" ${u.plan === 'free' ? 'selected' : ''}>Free</option>
+            <option value="pro" ${u.plan === 'pro' ? 'selected' : ''}>Pro</option>
+            <option value="enterprise" ${u.plan === 'enterprise' ? 'selected' : ''}>Enterprise</option>
+          </select>
+          <button class="btn btn-ghost btn-sm reset-btn" data-id="${u.id}" title="Reset Password">🔑</button>
+          <button class="btn btn-danger btn-sm delete-btn" data-id="${u.id}" title="Hapus">🗑</button>
+        </td>
+      </tr>`).join('')}</tbody></table>`;
+
+    // Wire actions
+    document.querySelectorAll('.detail-btn').forEach(btn => btn.addEventListener('click', () => showUserDetail(btn.dataset.id)));
+    document.querySelectorAll('.user-link').forEach(link => link.addEventListener('click', (e) => { e.preventDefault(); showUserDetail(link.dataset.id); }));
+    document.querySelectorAll('.ban-btn').forEach(btn => btn.addEventListener('click', () => toggleBan(btn.dataset.id, btn.dataset.status)));
+    document.querySelectorAll('.plan-select').forEach(sel => sel.addEventListener('change', () => changePlan(sel.dataset.id, sel.value)));
+    document.querySelectorAll('.reset-btn').forEach(btn => btn.addEventListener('click', () => resetPassword(btn.dataset.id)));
+    document.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', () => deleteUser(btn.dataset.id)));
+  }
+
+  async function showUserDetail(id) {
+    const modal = document.getElementById('user-modal');
+    const body = document.getElementById('modal-body');
+    modal.style.display = 'flex';
+    body.innerHTML = '<p class="muted">Memuat...</p>';
+
+    try {
+      // Get user info
+      const user = allUsers.find(u => u.id === id);
+
+      // Get user keys
+      const resp = await fetch(`/api/console/saas/users/${id}/keys`, {
+        headers: { 'authorization': `Bearer ${token}` },
+      });
+      if (resp.status === 401) return logout();
+      const keysData = await resp.json();
+      const keys = keysData.items ?? keysData.keys ?? [];
+
+      document.getElementById('modal-title').textContent = user?.email || 'Detail User';
+      body.innerHTML = `
+        <div style="margin-bottom:20px;">
+          <h4 style="margin-bottom:12px;">Info</h4>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:14px;">
+            <div><span class="muted">ID:</span><br/><code class="mono">${id}</code></div>
+            <div><span class="muted">Status:</span><br/><span class="badge ${user?.status === 'active' ? 'badge-green' : 'badge-red'}">${user?.status || 'active'}</span></div>
+            <div><span class="muted">Plan:</span><br/>${user?.plan || 'free'}</div>
+            <div><span class="muted">Terdaftar:</span><br/>${formatDate(user?.createdAt ?? user?.created_at)}</div>
+            <div><span class="muted">Login Terakhir:</span><br/>${formatDate(user?.lastLoginAt ?? user?.last_login_at)}</div>
+            <div><span class="muted">Total Tokens:</span><br/>${formatNum(user?.tokensUsed ?? user?.tokens_used)}</div>
+          </div>
+        </div>
+        <div>
+          <h4 style="margin-bottom:12px;">API Keys (${keys.length})</h4>
+          ${keys.length === 0 ? '<p class="muted">Tidak ada API key.</p>' : `
+            <div style="max-height:200px;overflow-y:auto;">
+              ${keys.map(k => `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--sb-canvas-night);border-radius:6px;margin-bottom:8px;">
+                  <div>
+                    <code class="mono" style="font-size:12px;">${escapeHtml(k.prefix || k.key_prefix || 'sk-...')}${escapeHtml(k.hint || '')}</code>
+                    <div class="muted" style="font-size:12px;">${escapeHtml(k.name || 'Default')} &middot; ${escapeHtml(formatDate(k.createdAt ?? k.created_at))}</div>
+                  </div>
+                  <span class="badge ${k.isActive !== false ? 'badge-green' : 'badge-red'}">${k.isActive !== false ? 'Active' : 'Revoked'}</span>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      `;
+    } catch (e) {
+      body.innerHTML = `<div class="flash flash-err">Gagal memuat detail: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  function closeModal() {
+    document.getElementById('user-modal').style.display = 'none';
+  }
+  window.closeModal = closeModal;
+
+  async function toggleBan(id, currentStatus) {
+    const newStatus = currentStatus === 'banned' ? 'active' : 'banned';
+    const action = newStatus === 'banned' ? 'ban' : 'unban';
+    if (!confirm(`${action === 'ban' ? 'Ban' : 'Unban'} user ini?`)) return;
+
+    try {
+      const resp = await fetch(`/api/console/saas/users/${id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'authorization': `Bearer ${token}` },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (resp.status === 401) return logout();
+      if (resp.ok) {
+        loadUsers();
+      } else {
+        const data = await resp.json().catch(() => ({}));
+        alert(data?.error?.message ?? 'Gagal mengubah status');
+      }
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+  }
+
+  async function changePlan(id, plan) {
+    try {
+      const resp = await fetch(`/api/console/saas/users/${id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'authorization': `Bearer ${token}` },
+        body: JSON.stringify({ plan }),
+      });
+      if (resp.status === 401) return logout();
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        alert(data?.error?.message ?? 'Gagal mengubah plan');
+        loadUsers(); // Revert UI
+      }
+    } catch (e) {
+      alert('Error: ' + e.message);
+      loadUsers();
+    }
+  }
+
+  async function resetPassword(id) {
+    if (!confirm('Reset password user ini? Password baru akan dikirim ke email mereka.')) return;
+
+    try {
+      const resp = await fetch(`/api/console/saas/users/${id}/reset-password`, {
+        method: 'POST',
+        headers: { 'authorization': `Bearer ${token}` },
+      });
+      if (resp.status === 401) return logout();
+      if (resp.ok) {
+        alert('Password berhasil direset. Email telah dikirim.');
+      } else {
+        const data = await resp.json().catch(() => ({}));
+        alert(data?.error?.message ?? 'Gagal reset password');
+      }
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+  }
+
+  async function deleteUser(id) {
+    const user = allUsers.find(u => u.id === id);
+    if (!confirm(`HAPUS user "${user?.email || id}"?\n\nSemua data dan API keys akan dihapus permanen!`)) return;
+
+    try {
+      const resp = await fetch(`/api/console/saas/users/${id}`, {
+        method: 'DELETE',
+        headers: { 'authorization': `Bearer ${token}` },
+      });
+      if (resp.status === 401) return logout();
+      if (resp.ok) {
+        loadUsers();
+      } else {
+        const data = await resp.json().catch(() => ({}));
+        alert(data?.error?.message ?? 'Gagal menghapus user');
+      }
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+  }
+
+  // Search filter
+  document.getElementById('search-input')?.addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    if (!q) return renderUsers(allUsers);
+    const filtered = allUsers.filter(u => u.email?.toLowerCase().includes(q));
+    renderUsers(filtered);
+  });
+
+  // Refresh button
+  document.getElementById('refresh-btn')?.addEventListener('click', () => loadUsers());
+
+  // Close modal on overlay click
+  document.getElementById('user-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'user-modal') closeModal();
+  });
+</script>

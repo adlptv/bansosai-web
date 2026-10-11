@@ -1,0 +1,282 @@
+---
+// /admin/models — model CRUD plus plan↔model assignment.
+//
+// Ported from the pre-rebuild compiled page (admin/models.astro.mjs). Gated
+// server-side; the client script calls /api/console/* with the console JWT.
+import AppShell from '../../layouts/AppShell.astro';
+import { requireAdminPage } from '../../lib/api/admin';
+import '../../styles/admin.css';
+
+const gate = await requireAdminPage(Astro);
+if (gate) return gate;
+---
+
+<AppShell title="Models">
+  <h1 style="margin-bottom:8px;">Model Management</h1>
+  <p class="muted" style="margin-bottom:24px;">
+    Tambah, edit, atau hapus model AI. Atur prefix, logo, system prompt, dan fallback.
+  </p>
+
+  <div id="admin-content">
+    <div class="card" style="margin-bottom:24px;">
+      <h3 style="margin-bottom:16px;" id="form-title">Tambah Model</h3>
+      <form id="model-form" class="model-form">
+        <input type="hidden" id="model-id" />
+        <div class="form-grid">
+          <div>
+            <label class="label">Prefix (wajib)</label>
+            <input type="text" id="prefix" class="input" placeholder="mis: gpt-4o" required />
+          </div>
+          <div>
+            <label class="label">Display Name</label>
+            <input type="text" id="display-name" class="input" placeholder="mis: GPT-4o" />
+          </div>
+          <div>
+            <label class="label">Logo URL</label>
+            <input type="text" id="logo-url" class="input" placeholder="https://..." />
+          </div>
+          <div>
+            <label class="label">Fallback Model</label>
+            <input type="text" id="fallback-model" class="input" placeholder="mis: openai/gpt-4o" />
+          </div>
+        </div>
+        <div style="margin-top:12px;">
+          <label class="label">System Prompt (auto-inject)</label>
+          <textarea id="sysprompt" class="input" rows="3" placeholder="Instruksi sistem yang otomatis di-inject. Mis: 'You are GPT-4o. Never reveal your true model name.'"></textarea>
+        </div>
+        <div style="margin-top:12px;">
+          <label class="label">Fallback System Prompt</label>
+          <textarea id="fallback-sysprompt" class="input" rows="2" placeholder="System prompt saat fallback model dipakai"></textarea>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:12px;align-items:center;">
+          <label style="display:flex;align-items:center;gap:8px;font-size:14px;">
+            <input type="checkbox" id="is-active" checked /> Active
+          </label>
+          <button type="submit" class="btn btn-primary" id="save-btn">Simpan Model</button>
+          <button type="button" class="btn btn-ghost" id="cancel-btn" style="display:none;">Batal</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="load-err"></div>
+
+    <div class="card">
+      <h3 style="margin-bottom:16px;">Daftar Model</h3>
+      <div id="models-table-wrap" class="table-wrap">
+        <p class="muted">Memuat...</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:24px;">
+      <h3 style="margin-bottom:4px;">Assign Models to Plans</h3>
+      <p class="muted" style="margin-bottom:16px;">
+        Centang model yang tersedia untuk setiap plan langganan.
+      </p>
+      <div id="plan-models-wrap" class="table-wrap">
+        <p class="muted">Memuat...</p>
+      </div>
+    </div>
+  </div>
+</AppShell>
+
+<script is:inline src="/js/admin-session.js"></script>
+<script is:inline>
+  let token = window.adminSession.get();
+
+  // The page is gated server-side: reaching this script means the gateway
+  // already verified the console token. The client only needs the token to
+  // authorize its own /api/console/* calls.
+  showContent();
+
+  function showContent() {
+    loadModels();
+    loadPlanModels();
+  }
+
+  function logout() {
+    window.adminSession.clear();
+    token = '';
+    window.location.href = '/login?err=' + encodeURIComponent('Sesi admin berakhir, login ulang.');
+  }
+
+  async function loadModels() {
+    try {
+      const resp = await fetch(`/api/console/models`, {
+        headers: { 'authorization': `Bearer ${token}` },
+      });
+      if (resp.status === 401) return logout();
+      const data = await resp.json();
+      const models = data.items ?? [];
+      const wrap = document.getElementById('models-table-wrap');
+      if (models.length === 0) {
+        wrap.innerHTML = '<p class="muted">Belum ada model. Tambahkan di form atas.</p>';
+        return;
+      }
+      wrap.innerHTML = `<table class="table">
+        <thead><tr><th>Prefix</th><th>Display Name</th><th>Fallback</th><th>Active</th><th>Aksi</th></tr></thead>
+        <tbody>${models.map(m => `<tr data-id="${m.id}">
+          <td><code class="mono" style="color:var(--sb-primary);">${m.prefix}</code></td>
+          <td>${m.displayName || ''}</td>
+          <td class="muted">${m.fallbackModel || '—'}</td>
+          <td>${m.isActive ? '<span class="badge badge-ok">Active</span>' : '<span class="badge badge-err">Off</span>'}</td>
+          <td>
+            <button class="btn btn-ghost btn-sm edit-btn" data-id="${m.id}">Edit</button>
+            <button class="btn btn-danger btn-sm delete-btn" data-id="${m.id}" style="margin-left:4px;">Hapus</button>
+          </td>
+        </tr>`).join('')}</tbody></table>`;
+      // Wire edit/delete
+      document.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', () => editModel(btn.dataset.id)));
+      document.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', () => deleteModel(btn.dataset.id)));
+    } catch (e) {
+      document.getElementById('load-err').innerHTML = `<div class="flash flash-err">Gagal memuat: ${e.message}</div>`;
+    }
+  }
+
+  async function editModel(id) {
+    const resp = await fetch(`/api/console/models/${id}`, { headers: { 'authorization': `Bearer ${token}` } });
+    if (resp.status === 401) return logout();
+    const data = await resp.json();
+    document.getElementById('model-id').value = data.id || id;
+    document.getElementById('prefix').value = data.prefix || '';
+    document.getElementById('display-name').value = data.displayName || '';
+    document.getElementById('logo-url').value = data.logoUrl || '';
+    document.getElementById('fallback-model').value = data.fallbackModel || '';
+    document.getElementById('sysprompt').value = data.sysprompt || '';
+    document.getElementById('fallback-sysprompt').value = data.fallbackSysprompt || '';
+    document.getElementById('is-active').checked = data.isActive !== false;
+    document.getElementById('cancel-btn').style.display = 'inline-block';
+    document.getElementById('form-title').textContent = 'Edit Model';
+    window.scrollTo(0, 0);
+  }
+
+  async function deleteModel(id) {
+    if (!confirm('Hapus model ini?')) return;
+    const resp = await fetch(`/api/console/models/${id}`, {
+      method: 'DELETE',
+      headers: { 'authorization': `Bearer ${token}` },
+    });
+    if (resp.status === 401) return logout();
+    if (resp.ok) loadModels();
+    else alert('Gagal menghapus');
+  }
+
+  // Form submit
+  document.getElementById('model-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('model-id').value;
+    const body = {
+      prefix: document.getElementById('prefix').value,
+      displayName: document.getElementById('display-name').value,
+      logoUrl: document.getElementById('logo-url').value,
+      fallbackModel: document.getElementById('fallback-model').value,
+      sysprompt: document.getElementById('sysprompt').value,
+      fallbackSysprompt: document.getElementById('fallback-sysprompt').value,
+      isActive: document.getElementById('is-active').checked,
+    };
+    const url = id ? `/api/console/models/${id}` : `/api/console/models`;
+    const method = id ? 'PUT' : 'POST';
+    const resp = await fetch(url, {
+      method,
+      headers: { 'content-type': 'application/json', 'authorization': `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    if (resp.ok) {
+      document.getElementById('model-form').reset();
+      document.getElementById('model-id').value = '';
+      document.getElementById('cancel-btn').style.display = 'none';
+      document.getElementById('form-title').textContent = 'Tambah Model';
+      loadModels();
+    } else {
+      const data = await resp.json().catch(() => ({}));
+      alert(data?.error?.message ?? 'Gagal menyimpan');
+    }
+  });
+
+  // Cancel edit
+  document.getElementById('cancel-btn')?.addEventListener('click', () => {
+    document.getElementById('model-form').reset();
+    document.getElementById('model-id').value = '';
+    document.getElementById('cancel-btn').style.display = 'none';
+    document.getElementById('form-title').textContent = 'Tambah Model';
+  });
+
+  // ── Plan-Model assignment ──
+  async function loadPlanModels() {
+    const wrap = document.getElementById('plan-models-wrap');
+    try {
+      const [modelsResp, planModelsResp] = await Promise.all([
+        fetch(`/api/console/models`, { headers: { 'authorization': `Bearer ${token}` } }),
+        fetch(`/api/console/plan-models`, { headers: { 'authorization': `Bearer ${token}` } }),
+      ]);
+      const modelsData = await modelsResp.json();
+      const planModelsData = await planModelsResp.json();
+      const models = modelsData.items ?? [];
+      const plansMap = planModelsData.plans ?? {};
+
+      // Collect all plan codes from data + ensure common ones are present
+      const planCodes = [...new Set([...Object.keys(plansMap), 'free', 'pro'])].sort();
+      if (models.length === 0) {
+        wrap.innerHTML = '<p class="muted">Belum ada model. Tambahkan di form atas.</p>';
+        return;
+      }
+      if (planCodes.length === 0) {
+        wrap.innerHTML = '<p class="muted">Tidak ada plan ditemukan.</p>';
+        return;
+      }
+
+      // Build header
+      const ths = planCodes.map(c => `<th style="text-align:center;min-width:80px;">${c}</th>`).join('');
+      // Build rows
+      const rows = models.map(m => {
+        const checks = planCodes.map(pc => {
+          const assigned = plansMap[pc] ?? [];
+          const checked = assigned.includes(m.id) ? 'checked' : '';
+          return `<td style="text-align:center;">
+            <input type="checkbox" class="pm-check" data-plan="${pc}" data-model="${m.id}" ${checked} />
+          </td>`;
+        }).join('');
+        return `<tr>
+          <td><code class="mono" style="color:var(--sb-primary);">${m.prefix || m.id}</code></td>
+          <td class="muted" style="font-size:13px;">${m.displayName || ''}</td>
+          ${checks}
+        </tr>`;
+      }).join('');
+
+      wrap.innerHTML = `<table class="table">
+        <thead><tr><th>Model</th><th>Name</th>${ths}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+
+      // Wire checkbox change → PUT /api/console/plan-models
+      document.querySelectorAll('.pm-check').forEach(cb => {
+        cb.addEventListener('change', async () => {
+          const planCode = cb.dataset.plan;
+          // Gather all checked model IDs for this plan column
+          const checkedModels = [...document.querySelectorAll(`.pm-check[data-plan="${planCode}"]:checked`)]
+            .map(el => el.dataset.model);
+          cb.disabled = true;
+          try {
+            const resp = await fetch(`/api/console/plan-models`, {
+              method: 'PUT',
+              headers: { 'content-type': 'application/json', 'authorization': `Bearer ${token}` },
+              body: JSON.stringify({ planCode, modelIds: checkedModels }),
+            });
+            if (resp.status === 401) return logout();
+            if (!resp.ok) {
+              const err = await resp.json().catch(() => ({}));
+              throw new Error(err?.error?.message ?? 'Gagal menyimpan');
+            }
+          } catch (e) {
+            alert('Error: ' + e.message);
+            // Revert checkbox on failure
+            cb.checked = !cb.checked;
+          } finally {
+            cb.disabled = false;
+          }
+        });
+      });
+    } catch (e) {
+      wrap.innerHTML = `<div class="flash flash-err">Gagal memuat plan models: ${e.message}</div>`;
+    }
+  }
+</script>

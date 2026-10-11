@@ -1,0 +1,294 @@
+---
+// /admin/combos — model aliases + combo routing strategies CRUD.
+// Aliases: /api/console/aliases ; Combos: /api/console/combos.
+import AppShell from '../../layouts/AppShell.astro';
+import { requireAdminPage } from '../../lib/api/admin';
+import { getSessionUser } from '../../lib/api/session';
+
+const gate = await requireAdminPage(Astro);
+if (gate) return gate;
+
+const user = await getSessionUser(Astro);
+---
+
+<AppShell title="Combos & Aliases" subtitle="Kelola model aliases dan combo routing strategies." user={user}>
+  <div id="admin-content">
+    <!-- Model Aliases Section -->
+    <div class="card" style="margin-bottom:24px;">
+      <h3 style="margin-bottom:16px;">Model Aliases</h3>
+      <div style="display:flex;gap:12px;margin-bottom:16px;">
+        <input type="text" id="alias-name" class="input" placeholder="Alias (mis: gpt4)" style="flex:1;" />
+        <input type="text" id="alias-target" class="input" placeholder="Target model (mis: openai/gpt-4o)" style="flex:2;" />
+        <button class="btn btn-primary" onclick="createAlias()">Add Alias</button>
+      </div>
+      <div id="aliases-wrap" class="table-wrap">
+        <p class="muted">Memuat...</p>
+      </div>
+    </div>
+
+    <!-- Combos Section -->
+    <div class="card" style="margin-bottom:24px;">
+      <h3 style="margin-bottom:16px;" id="combo-form-title">Create Combo</h3>
+      <form id="combo-form">
+        <input type="hidden" id="combo-id" />
+        <div class="form-grid">
+          <div>
+            <label class="label">Combo Name</label>
+            <input type="text" id="combo-name" class="input" placeholder="mis: premium-fallback" required />
+          </div>
+          <div>
+            <label class="label">Strategy</label>
+            <select id="combo-strategy" class="input">
+              <option value="fallback">Fallback</option>
+              <option value="round-robin">Round Robin</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-top:12px;">
+          <label class="label">Models (one per line)</label>
+          <textarea id="combo-models" class="input" rows="4" placeholder={'openai/gpt-4o\nanthropic/claude-3-opus\ngoogle/gemini-pro'}></textarea>
+        </div>
+        <div style="margin-top:12px;">
+          <label class="label">Sticky Limit (requests)</label>
+          <input type="number" id="combo-sticky" class="input" placeholder="10" min="1" />
+        </div>
+        <div style="margin-top:12px;display:flex;gap:12px;">
+          <button type="submit" class="btn btn-primary">Save Combo</button>
+          <button type="button" class="btn btn-ghost" id="combo-cancel-btn" style="display:none;">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="load-err"></div>
+
+    <div class="card">
+      <h3 style="margin-bottom:16px;">Existing Combos</h3>
+      <div id="combos-wrap" class="table-wrap">
+        <p class="muted">Memuat...</p>
+      </div>
+    </div>
+  </div>
+
+  <style is:global>
+    .card {
+      padding: var(--sb-lg);
+      background: var(--sb-canvas-raised);
+      border: 1px solid var(--sb-hairline);
+      border-radius: var(--sb-r-lg);
+      box-shadow: var(--sb-elev-1);
+    }
+    .table { width: 100%; border-collapse: collapse; font-size: var(--sb-caption); }
+    .table th,
+    .table td {
+      padding: var(--sb-md) var(--sb-lg);
+      text-align: left;
+      vertical-align: middle;
+      border-bottom: 1px solid var(--sb-hairline);
+    }
+    .table th { color: var(--sb-ink-mute); font-weight: 500; background: var(--sb-canvas-night); }
+    .table tbody tr:hover td { background: var(--sb-canvas-night); }
+    .table-wrap { width: 100%; overflow-x: auto; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--sb-lg); }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sb-xs);
+      padding: 2px var(--sb-sm);
+      border: 1px solid var(--sb-hairline-strong);
+      border-radius: var(--sb-r-full);
+      background: var(--sb-canvas-raised);
+      color: var(--sb-ink);
+      font-size: var(--sb-micro);
+      font-weight: 500;
+    }
+    .badge-green { border-color: var(--sb-status-success); color: var(--sb-status-success); }
+    .badge-orange { border-color: var(--sb-status-warning); color: var(--sb-status-warning); }
+    .flash { padding: var(--sb-md) var(--sb-lg); border: 1px solid var(--sb-hairline-strong); border-left-width: 3px; border-radius: var(--sb-r-sm); background: var(--sb-canvas-raised); font-size: var(--sb-caption); }
+    .flash-err { border-left-color: var(--sb-status-danger); }
+    .btn-danger { background: var(--sb-canvas-raised); border-color: var(--sb-status-danger); color: var(--sb-status-danger); }
+    .btn-danger:hover { background: var(--sb-status-danger); color: var(--sb-on-primary); }
+  </style>
+
+  <script is:inline>
+    window.adminSession = (function () {
+      var NAME = 'console_jwt';
+      var MAX_AGE = 12 * 3600;
+      function get() {
+        var parts = String(document.cookie || '').split(';');
+        for (var i = 0; i < parts.length; i++) {
+          var pair = parts[i].trim();
+          if (pair.indexOf(NAME + '=') === 0) return decodeURIComponent(pair.slice(NAME.length + 1));
+        }
+        return '';
+      }
+      function set(token) {
+        if (!token) return;
+        var attrs = '; Path=/; SameSite=Lax; Max-Age=' + MAX_AGE;
+        if (location.protocol === 'https:') attrs += '; Secure';
+        document.cookie = NAME + '=' + encodeURIComponent(token) + attrs;
+      }
+      function clear() { document.cookie = NAME + '=; Path=/; SameSite=Lax; Max-Age=0'; }
+      return { get: get, set: set, clear: clear };
+    })();
+  </script>
+
+  <script is:inline>
+    let token = window.adminSession.get();
+    let allCombos = [];
+    showContent();
+
+    function showContent() {
+      loadAliases();
+      loadCombos();
+    }
+
+    async function loadAliases() {
+      try {
+        const resp = await fetch('/api/console/aliases', {
+          headers: { 'authorization': 'Bearer ' + token },
+        });
+        const data = await resp.json();
+        const aliases = data.items ?? [];
+        const wrap = document.getElementById('aliases-wrap');
+        if (aliases.length === 0) {
+          wrap.innerHTML = '<p class="muted">Belum ada alias.</p>';
+          return;
+        }
+        wrap.innerHTML = '<table class="table">' +
+          '<thead><tr><th>Alias</th><th>Target Model</th><th>Aksi</th></tr></thead>' +
+          '<tbody>' + aliases.map(function (a) {
+            return '<tr>' +
+              '<td><code class="mono" style="color:var(--sb-primary);">' + a.alias + '</code></td>' +
+              '<td class="muted">' + a.target + '</td>' +
+              '<td><button class="btn btn-danger btn-sm" onclick="deleteAlias(\'' + a.alias + '\')">Hapus</button></td>' +
+            '</tr>';
+          }).join('') + '</tbody></table>';
+      } catch (e) {
+        document.getElementById('aliases-wrap').innerHTML = '<div class="flash flash-err">Error: ' + e.message + '</div>';
+      }
+    }
+
+    async function createAlias() {
+      const alias = document.getElementById('alias-name').value.trim();
+      const target = document.getElementById('alias-target').value.trim();
+      if (!alias || !target) { alert('Alias dan target harus diisi'); return; }
+      const resp = await fetch('/api/console/aliases', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + token },
+        body: JSON.stringify({ alias: alias, target: target }),
+      });
+      if (resp.ok) {
+        document.getElementById('alias-name').value = '';
+        document.getElementById('alias-target').value = '';
+        loadAliases();
+      } else {
+        alert('Gagal membuat alias');
+      }
+    }
+    window.createAlias = createAlias;
+
+    async function deleteAlias(alias) {
+      if (!confirm('Hapus alias "' + alias + '"?')) return;
+      const resp = await fetch('/api/console/aliases/' + encodeURIComponent(alias), {
+        method: 'DELETE',
+        headers: { 'authorization': 'Bearer ' + token },
+      });
+      if (resp.ok) loadAliases();
+      else alert('Gagal menghapus');
+    }
+    window.deleteAlias = deleteAlias;
+
+    async function loadCombos() {
+      try {
+        const resp = await fetch('/api/console/combos', {
+          headers: { 'authorization': 'Bearer ' + token },
+        });
+        const data = await resp.json();
+        allCombos = data.items ?? [];
+        const wrap = document.getElementById('combos-wrap');
+        if (allCombos.length === 0) {
+          wrap.innerHTML = '<p class="muted">Belum ada combo.</p>';
+          return;
+        }
+        wrap.innerHTML = '<table class="table">' +
+          '<thead><tr><th>Name</th><th>Strategy</th><th>Models</th><th>Sticky</th><th>Aksi</th></tr></thead>' +
+          '<tbody>' + allCombos.map(function (c, idx) {
+            return '<tr>' +
+              '<td><code class="mono" style="color:var(--sb-primary);">' + c.name + '</code></td>' +
+              '<td><span class="badge badge-' + (c.strategy === 'fallback' ? 'orange' : 'green') + '">' + c.strategy + '</span></td>' +
+              '<td class="muted" style="font-size:13px;">' + (c.models || []).join(', ') + '</td>' +
+              '<td class="muted">' + (c.stickyLimit || '—') + '</td>' +
+              '<td>' +
+                '<button class="btn btn-ghost btn-sm combo-edit-btn" data-idx="' + idx + '">Edit</button>' +
+                '<button class="btn btn-danger btn-sm" onclick="deleteCombo(\'' + c.id + '\')" style="margin-left:4px;">Hapus</button>' +
+              '</td>' +
+            '</tr>';
+          }).join('') + '</tbody></table>';
+
+        wrap.querySelectorAll('.combo-edit-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () { editCombo(allCombos[Number(btn.dataset.idx)]); });
+        });
+      } catch (e) {
+        document.getElementById('combos-wrap').innerHTML = '<div class="flash flash-err">Error: ' + e.message + '</div>';
+      }
+    }
+
+    function editCombo(combo) {
+      if (!combo) return;
+      document.getElementById('combo-id').value = combo.id;
+      document.getElementById('combo-name').value = combo.name || '';
+      document.getElementById('combo-strategy').value = combo.strategy || 'fallback';
+      document.getElementById('combo-models').value = (combo.models || []).join('\n');
+      document.getElementById('combo-sticky').value = combo.stickyLimit || '';
+      document.getElementById('combo-cancel-btn').style.display = 'inline-block';
+      document.getElementById('combo-form-title').textContent = 'Edit Combo';
+      window.scrollTo(0, 0);
+    }
+    window.editCombo = editCombo;
+
+    async function deleteCombo(id) {
+      if (!confirm('Hapus combo ini?')) return;
+      const resp = await fetch('/api/console/combos/' + id, {
+        method: 'DELETE',
+        headers: { 'authorization': 'Bearer ' + token },
+      });
+      if (resp.ok) loadCombos();
+      else alert('Gagal menghapus');
+    }
+    window.deleteCombo = deleteCombo;
+
+    document.getElementById('combo-form').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const id = document.getElementById('combo-id').value;
+      const body = {
+        name: document.getElementById('combo-name').value,
+        strategy: document.getElementById('combo-strategy').value,
+        models: document.getElementById('combo-models').value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean),
+        stickyLimit: parseInt(document.getElementById('combo-sticky').value, 10) || undefined,
+      };
+      const url = id ? '/api/console/combos/' + id : '/api/console/combos';
+      const method = id ? 'PATCH' : 'POST';
+      const resp = await fetch(url, {
+        method: method,
+        headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + token },
+        body: JSON.stringify(body),
+      });
+      if (resp.ok) {
+        document.getElementById('combo-form').reset();
+        document.getElementById('combo-id').value = '';
+        document.getElementById('combo-cancel-btn').style.display = 'none';
+        document.getElementById('combo-form-title').textContent = 'Create Combo';
+        loadCombos();
+      } else {
+        alert('Gagal menyimpan combo');
+      }
+    });
+
+    document.getElementById('combo-cancel-btn').addEventListener('click', function () {
+      document.getElementById('combo-form').reset();
+      document.getElementById('combo-id').value = '';
+      document.getElementById('combo-cancel-btn').style.display = 'none';
+      document.getElementById('combo-form-title').textContent = 'Create Combo';
+    });
+  </script>
+</AppShell>

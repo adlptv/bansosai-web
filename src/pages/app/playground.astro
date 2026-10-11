@@ -1,0 +1,290 @@
+---
+// /app/playground — chat with a model using one of the user's own API keys.
+// Ported from the pre-rebuild compiled page. Model catalog comes from the
+// public /saas/api/models; the active keys come from the signed user endpoint.
+import AppShell from '../../layouts/AppShell.astro';
+import { getSessionUser, getToken } from '../../lib/api/session';
+import { apiGet } from '../../lib/api/saas';
+
+const user = await getSessionUser(Astro);
+if (!user) return Astro.redirect('/login');
+const token = getToken(Astro)!;
+
+interface ModelOption {
+  prefix: string;
+  displayName: string;
+}
+interface KeyOption {
+  id: string;
+  key_prefix?: string;
+  active?: boolean;
+}
+
+let models: ModelOption[] = [];
+let keys: KeyOption[] = [];
+let error = '';
+try {
+  const [modelData, keyData] = await Promise.all([
+    apiGet<{ models?: ModelOption[] }>('/saas/api/models', '', Astro.request),
+    apiGet<{ keys?: KeyOption[] }>('/saas/api/keys', token, Astro.request),
+  ]);
+  models = modelData.models ?? [];
+  keys = (keyData.keys ?? []).filter((key) => Boolean(key.active));
+} catch (err) {
+  error = err instanceof Error ? err.message : 'Gagal memuat playground';
+}
+---
+
+<AppShell title="Playground" description="Uji model bansosAI dengan API key milikmu." user={user}>
+  <section class="playground-page">
+    <div class="playground-header">
+      <div>
+        <h1>Try a model</h1>
+        <p class="muted">Request akan diteruskan ke Cartethyia Go melalui proxy aman.</p>
+      </div>
+      <a href="/app/keys" class="btn btn-ghost">Manage keys</a>
+    </div>
+
+    {error && <div class="flash flash-err" role="alert">{error}</div>}
+    {keys.length === 0 && (
+      <div class="flash flash-warn">
+        Buat dan simpan API key terlebih dahulu di <a href="/app/keys">API Keys</a>.
+      </div>
+    )}
+
+    <div class="playground-shell">
+      <div class="playground-toolbar">
+        <label for="model">Model</label>
+        <select id="model" class="input" disabled={models.length === 0}>
+          {models.map((model) => (
+            <option value={model.prefix}>{model.displayName} · {model.prefix}</option>
+          ))}
+        </select>
+        <label for="key">Key</label>
+        <select id="key" class="input" disabled={keys.length === 0}>
+          {keys.map((key) => (
+            <option value={key.id}>{key.key_prefix}…</option>
+          ))}
+        </select>
+      </div>
+
+      <div id="messages" class="playground-messages" aria-live="polite">
+        <div class="playground-empty">
+          Ask a model anything.<br />
+          <span>Responses stream directly from your Cartethyia gateway.</span>
+        </div>
+      </div>
+
+      <form id="playgroundForm" class="playground-composer">
+        <label class="sr-only" for="prompt">Message</label>
+        <textarea id="prompt" rows="2" placeholder="Message bansosAI…" required></textarea>
+        <button class="btn btn-primary" type="submit" disabled={keys.length === 0}>
+          Send <span aria-hidden="true">↗</span>
+        </button>
+      </form>
+    </div>
+  </section>
+</AppShell>
+
+<style is:global>
+  .playground-page { display: flex; flex-direction: column; gap: 16px; }
+  .playground-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .playground-header h1 { margin: 4px 0; font-size: 30px; }
+  .playground-shell {
+    overflow: hidden;
+    border: 1px solid var(--sb-hairline);
+    border-radius: var(--sb-r-lg);
+    background: var(--sb-canvas-raised);
+    box-shadow: var(--sb-elev-1);
+  }
+  .playground-toolbar {
+    display: grid;
+    grid-template-columns: auto minmax(180px, 1fr) auto minmax(160px, 240px);
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--sb-hairline);
+  }
+  .playground-toolbar label {
+    color: var(--sb-ink-mute);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .playground-messages { min-height: 430px; max-height: 58vh; overflow-y: auto; padding: 26px; }
+  .playground-empty { padding: 120px 20px; text-align: center; color: var(--sb-ink-secondary); font-size: 18px; }
+  .playground-empty span { color: var(--sb-ink-mute); font-size: 13px; }
+  .chat-bubble {
+    max-width: 78%;
+    margin: 0 0 14px;
+    padding: 12px 15px;
+    border-radius: 10px;
+    white-space: pre-wrap;
+    line-height: 1.55;
+    font-size: 14px;
+    background: var(--sb-canvas-night);
+    border: 1px solid var(--sb-hairline);
+  }
+  .chat-bubble.user { margin-left: auto; background: var(--sb-primary); border-color: var(--sb-primary); color: var(--sb-on-primary); }
+  .chat-bubble.assistant { background: var(--sb-canvas-night); }
+  .chat-bubble.error { border-color: var(--sb-status-danger); color: var(--sb-status-danger); }
+  .playground-composer {
+    display: flex;
+    align-items: end;
+    gap: 10px;
+    padding: 14px;
+    border-top: 1px solid var(--sb-hairline);
+  }
+  .playground-composer textarea {
+    flex: 1;
+    min-height: 48px;
+    resize: vertical;
+    padding: 12px;
+    border: 1px solid var(--sb-hairline-strong);
+    border-radius: var(--sb-r-sm);
+    background: var(--sb-canvas);
+    color: var(--sb-ink);
+    font: 14px/1.5 var(--sb-font);
+  }
+  .playground-composer textarea:focus { outline: 2px solid var(--sb-primary); outline-offset: -1px; }
+  .playground-composer .btn { min-height: 48px; }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  @media (max-width: 767.98px) {
+    .playground-toolbar { grid-template-columns: 1fr; }
+    .playground-messages { min-height: 360px; padding: 16px; }
+    .chat-bubble { max-width: 92%; }
+  }
+</style>
+
+<script is:inline>
+  // Streaming chat. The browser talks only to /api/chat (same origin), which
+  // authenticates the request with the user-supplied bns_* key server-side.
+  (function () {
+    var form = document.getElementById('playgroundForm');
+    var promptEl = document.getElementById('prompt');
+    var messagesEl = document.getElementById('messages');
+    var modelEl = document.getElementById('model');
+    var keyEl = document.getElementById('key');
+    if (!form || !promptEl || !messagesEl || !modelEl || !keyEl) return;
+
+    var history = [];
+    var busy = false;
+    var secretCache = {};
+
+    // The <select> carries the key id (never the secret). /api/chat needs the
+    // real bns_* secret, so it is fetched on demand from /api/keys/reveal and
+    // kept only in this closure.
+    async function revealKey(id) {
+      if (secretCache[id]) return secretCache[id];
+      var resp = await fetch('/api/keys/reveal?id=' + encodeURIComponent(id));
+      var data = await resp.json().catch(function () { return {}; });
+      if (!resp.ok) throw new Error((data && data.error) || 'Gagal mengambil API key.');
+      var secret = data && (data.key || data.keyPrefix);
+      if (!secret) throw new Error('API key tidak tersedia.');
+      secretCache[id] = secret;
+      return secret;
+    }
+
+    function clearEmpty() {
+      var empty = messagesEl.querySelector('.playground-empty');
+      if (empty) empty.remove();
+    }
+
+    function addBubble(role, text) {
+      clearEmpty();
+      var div = document.createElement('div');
+      div.className = 'chat-bubble ' + role;
+      div.textContent = text;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return div;
+    }
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      if (busy) return;
+      var text = promptEl.value.trim();
+      if (!text) return;
+      var model = modelEl.value;
+      var keyId = keyEl.value;
+      if (!model || !keyId) return;
+
+      busy = true;
+      promptEl.value = '';
+      addBubble('user', text);
+      history.push({ role: 'user', content: text });
+      var out = addBubble('assistant', '…');
+      var answer = '';
+
+      revealKey(keyId)
+        .then(function (apiKey) {
+          return fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ apiKey: apiKey, model: model, messages: history, stream: true }),
+          });
+        })
+        .then(function (resp) {
+          if (!resp.ok || !resp.body) {
+            return resp.text().then(function (t) {
+              var msg = 'HTTP ' + resp.status;
+              try {
+                var parsed = JSON.parse(t);
+                if (parsed && parsed.error && parsed.error.message) msg = parsed.error.message;
+              } catch (e) { /* keep the status text */ }
+              throw new Error(msg);
+            });
+          }
+
+          var reader = resp.body.getReader();
+          var decoder = new TextDecoder();
+          var buffer = '';
+
+          function pump() {
+            return reader.read().then(function (chunk) {
+              if (chunk.done) return;
+              buffer += decoder.decode(chunk.value, { stream: true });
+              var lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+              lines.forEach(function (line) {
+                var trimmed = line.trim();
+                if (!trimmed || trimmed.indexOf('data:') !== 0) return;
+                var payload = trimmed.slice(5).trim();
+                if (payload === '[DONE]') return;
+                var parsed;
+                try { parsed = JSON.parse(payload); } catch (e) { return; }
+                var delta = parsed.choices && parsed.choices[0] && parsed.choices[0].delta;
+                var piece = delta && delta.content;
+                if (typeof piece === 'string' && piece) {
+                  answer += piece;
+                  out.textContent = answer;
+                  messagesEl.scrollTop = messagesEl.scrollHeight;
+                }
+              });
+              return pump();
+            });
+          }
+          return pump();
+        })
+        .then(function () {
+          if (!answer) out.textContent = '(tidak ada balasan)';
+          history.push({ role: 'assistant', content: answer || '' });
+        })
+        .catch(function (e) {
+          out.className = 'chat-bubble error';
+          out.textContent = e && e.message ? e.message : 'Gagal mengirim permintaan.';
+        })
+        .finally(function () { busy = false; });
+    });
+  })();
+</script>

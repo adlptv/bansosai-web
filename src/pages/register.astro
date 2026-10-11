@@ -3,7 +3,7 @@ import Base from '../layouts/Base.astro';
 import Icon from '../components/Icon.astro';
 
 const params = Astro.url.searchParams;
-const errorMessage = params.get('error');
+const errorMessage = params.get('error') ?? params.get('err');
 const prefillEmail = params.get('email') ?? '';
 
 // Cloudflare Turnstile site key. Public value (it ships in the page HTML);
@@ -48,7 +48,7 @@ const turnstileSiteKey =
 
       <div class="auth-sep">atau email</div>
 
-      <form method="POST" action="/api/auth/register" id="register-form">
+      <form method="POST" action="/api/register" id="register-form">
         <div class="field">
           <label class="label" for="register-email">Email</label>
           <input id="register-email" class="input" type="email" name="email" required autocomplete="email" aria-describedby="email-error" value={prefillEmail} />

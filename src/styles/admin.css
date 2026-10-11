@@ -1,0 +1,92 @@
+/* ============================================================================
+ * bansosAI — admin panel helpers
+ * ============================================================================
+ *
+ * Shared by /admin/*. These classes are used by the server-rendered markup AND
+ * by client scripts that build HTML with innerHTML (no Astro scope attribute),
+ * so they live in a global stylesheet rather than a component <style> block.
+ *
+ * Relies on the --sb-* tokens from tokens.css.
+ * ========================================================================== */
+
+/* Cards inside the shell get inner padding (the base .card is padding-less). */
+.app-content .card { padding: 20px; }
+
+/* ── Stat cards ────────────────────────────────────────────────────────────── */
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--sb-lg);
+}
+
+.stat-card {
+  padding: var(--sb-lg);
+  border: 1px solid var(--sb-hairline);
+  border-radius: var(--sb-r-lg);
+  background: var(--sb-canvas-raised);
+}
+.stat-card .stat-value {
+  margin: 6px 0;
+  font-size: var(--sb-display-md);
+  font-weight: 500;
+  letter-spacing: var(--sb-display-md-ls);
+}
+.stat-card .stat-label {
+  font-size: var(--sb-micro);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sb-ink-mute);
+}
+
+/* ── Status badges ─────────────────────────────────────────────────────────── */
+
+.badge-ok,
+.badge-green { border-color: var(--sb-status-success); color: var(--sb-status-success); }
+.badge-warn,
+.badge-orange { border-color: var(--sb-status-warning); color: var(--sb-status-warning); }
+.badge-err,
+.badge-red { border-color: var(--sb-status-danger); color: var(--sb-status-danger); }
+.badge-accent { border-color: var(--sb-primary); color: var(--sb-primary); }
+
+/* ── Buttons ───────────────────────────────────────────────────────────────── */
+
+.btn-danger {
+  background: var(--sb-status-danger);
+  border-color: var(--sb-status-danger);
+  color: var(--sb-on-primary);
+}
+.btn-danger:hover {
+  background: var(--sb-accent-tomato);
+  border-color: var(--sb-accent-tomato);
+  color: var(--sb-on-primary);
+}
+
+/* ── Forms ─────────────────────────────────────────────────────────────────── */
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--sb-md);
+}
+
+/* ── Modal ─────────────────────────────────────────────────────────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+}
+.modal-content {
+  width: 100%;
+  max-width: 520px;
+  max-height: 88vh;
+  overflow-y: auto;
+}

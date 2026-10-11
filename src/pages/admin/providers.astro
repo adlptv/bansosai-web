@@ -1,0 +1,363 @@
+---
+// /admin/providers — provider accounts: add credential, priority, active toggle.
+//
+// Ported from the pre-rebuild compiled page (admin/providers.astro.mjs) and the
+// client script /js/admin-providers.js. Gated server-side; the client script
+// calls /api/console/* with the console JWT.
+import AppShell from '../../layouts/AppShell.astro';
+import { requireAdminPage } from '../../lib/api/admin';
+import '../../styles/admin.css';
+
+const gate = await requireAdminPage(Astro);
+if (gate) return gate;
+---
+
+<AppShell title="Providers">
+  <h1 style="margin-bottom:8px;">Provider Accounts</h1>
+  <p class="muted" style="margin-bottom:24px;">
+    Kelola akun provider: tambah credential, atur prioritas, toggle aktif/nonaktif.
+  </p>
+
+  <div id="admin-content">
+    <div class="card" style="margin-bottom:24px;">
+      <h3 style="margin-bottom:16px;" id="form-title">Tambah Akun</h3>
+      <form id="account-form">
+        <input type="hidden" id="account-id" />
+        <div class="form-grid">
+          <div>
+            <label class="label">Provider</label>
+            <select id="provider-select" class="input" required>
+              <option value="">— Pilih provider —</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Nama Akun</label>
+            <input type="text" id="account-name" class="input" placeholder="mis: groq-main" required />
+          </div>
+          <div>
+            <label class="label">Credential (API Key)</label>
+            <input type="text" id="account-credential" class="input" placeholder="sk-..." />
+          </div>
+          <div>
+            <label class="label">Priority</label>
+            <input type="number" id="account-priority" class="input" placeholder="0" min="0" value="0" />
+          </div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:12px;align-items:center;">
+          <label style="display:flex;align-items:center;gap:8px;font-size:14px;">
+            <input type="checkbox" id="account-active" checked /> Active
+          </label>
+          <button type="submit" class="btn btn-primary" id="save-btn">Simpan Akun</button>
+          <button type="button" class="btn btn-ghost" id="cancel-btn" style="display:none;">Batal</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="load-err"></div>
+
+    <div id="providers-overview" style="margin-bottom:24px;display:flex;flex-wrap:wrap;gap:12px;"></div>
+
+    <div class="card" style="margin-bottom:24px;display:none;" id="custom-providers-card">
+      <h3 style="margin-bottom:16px;">
+        Custom Providers <span class="badge badge-accent" style="font-size:11px;margin-left:8px;">Blackbox, Mistral Pool, dll</span>
+      </h3>
+      <div id="custom-providers-list"></div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-bottom:16px;">Daftar Akun</h3>
+      <div id="accounts-table-wrap" class="table-wrap">
+        <p class="muted">Memuat...</p>
+      </div>
+    </div>
+  </div>
+</AppShell>
+
+<script is:inline src="/js/admin-session.js"></script>
+<script is:inline>
+  // Admin API calls go through the same-origin proxy at /api/console/*, exactly
+  // like every other admin page. This used to hardcode the cross-origin legacy
+  // host api.bansos.my.id, which tied the providers page to a domain that is not
+  // part of the product any more and skipped the proxy that forwards the admin's
+  // real client IP to the gateway's per-IP throttle.
+  let token = window.adminSession.get();
+  let allAccounts = [];
+  let allProviders = [];
+  let allCustomProviders = [];
+  let syncPoller = null;
+
+  // The page is gated server-side: reaching this script means the gateway
+  // already verified the console token.
+  showContent();
+
+  function headers() {
+    return { 'content-type': 'application/json', 'authorization': `Bearer ${token}` };
+  }
+
+  function handle401() {
+    // The gateway rejected the token. Drop it and let the server-side gate on
+    // /admin/login take over, rather than revealing a login form inside a page
+    // whose data the visitor is no longer entitled to.
+    window.adminSession.clear();
+    token = '';
+    window.location.href = '/admin/login?redirect=' + encodeURIComponent(window.location.pathname);
+  }
+
+  async function showContent() {
+    await Promise.all([loadProviders(), loadCustomProviders(), loadAccounts()]);
+    // Auto-sync with Cartethyia — poll providers + custom-providers + accounts every 30s
+    if (syncPoller) clearInterval(syncPoller);
+    syncPoller = setInterval(async () => {
+      await Promise.all([loadProviders(), loadCustomProviders(), loadAccounts()]);
+    }, 30000);
+  }
+
+  async function loadCustomProviders() {
+    try {
+      const resp = await fetch(`/api/console/custom-providers`, { headers: headers() });
+      if (resp.status === 401) { handle401(); return; }
+      if (!resp.ok) return;
+      const data = await resp.json();
+      allCustomProviders = data.items ?? data.custom_providers ?? data ?? [];
+      // Merge custom providers into allProviders (avoid duplicates by id)
+      allCustomProviders.forEach(cp => {
+        const id = cp.id ?? cp.name;
+        if (!allProviders.find(p => (p.id ?? p.name) === id)) {
+          allProviders.push({
+            id: cp.id ?? cp.name,
+            name: cp.name ?? cp.id,
+            slug: cp.slug,
+            custom: true,
+            ...cp
+          });
+        }
+      });
+      renderProviderOverview();
+      renderCustomProvidersDetail();
+    } catch (e) { /* custom-providers endpoint may not exist yet — ignore */ }
+  }
+
+  function renderCustomProvidersDetail() {
+    const card = document.getElementById('custom-providers-card');
+    const wrap = document.getElementById('custom-providers-list');
+    if (!allCustomProviders.length) {
+      card.style.display = 'none';
+      return;
+    }
+    card.style.display = 'block';
+    wrap.innerHTML = allCustomProviders.map(cp => {
+      const models = cp.models ?? [];
+      const totalKeys = cp.totalKeys ?? 0;
+      const activeKeys = cp.activeKeys ?? 0;
+      return `
+        <div style="border:1px solid var(--sb-hairline);border-radius:8px;padding:16px;margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <div>
+              <div style="font-weight:600;font-size:16px;">${cp.name}</div>
+              <div class="muted" style="font-size:13px;">slug: <code class="mono">${cp.slug}</code> · ${cp.type ?? 'openai'}</div>
+            </div>
+            <span class="badge ${cp.active !== false ? 'badge-ok' : 'badge-err'}">${cp.active !== false ? 'Active' : 'Off'}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;font-size:14px;">
+            <div>
+              <span class="muted">Models:</span><br/>
+              <strong>${models.length}</strong> model
+            </div>
+            <div>
+              <span class="muted">API Keys:</span><br/>
+              <strong>${activeKeys}</strong> / ${totalKeys} aktif
+            </div>
+            <div>
+              <span class="muted">Base URL:</span><br/>
+              <code class="mono" style="font-size:12px;">${cp.baseUrl ?? cp.base_url ?? '—'}</code>
+            </div>
+          </div>
+          ${models.length > 0 ? `
+            <details style="margin-top:12px;">
+              <summary style="cursor:pointer;font-size:13px;color:var(--sb-ink-mute);">Lihat ${models.length} models</summary>
+              <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">
+                ${models.map(m => `<span class="badge badge-accent" style="font-size:11px;">${m.id ?? m}</span>`).join('')}
+              </div>
+            </details>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function loadProviders() {
+    try {
+      const resp = await fetch(`/api/console/providers`, { headers: headers() });
+      if (resp.status === 401) { handle401(); return; }
+      const data = await resp.json();
+      allProviders = data.items ?? data ?? [];
+      // Populate provider dropdown
+      const sel = document.getElementById('provider-select');
+      sel.innerHTML = '<option value="">— Pilih provider —</option>' +
+        allProviders.map(p => `<option value="${p.id ?? p.name}">${p.name ?? p.id}</option>`).join('');
+      // Render overview cards
+      renderProviderOverview();
+    } catch (e) {
+      document.getElementById('load-err').innerHTML = `<div class="flash flash-err">Gagal memuat providers: ${e.message}</div>`;
+    }
+  }
+
+  async function loadAccounts() {
+    try {
+      const resp = await fetch(`/api/console/accounts`, { headers: headers() });
+      if (resp.status === 401) { handle401(); return; }
+      const data = await resp.json();
+      allAccounts = data.items ?? data ?? [];
+      renderAccountsTable();
+      renderProviderOverview();
+    } catch (e) {
+      document.getElementById('load-err').innerHTML = `<div class="flash flash-err">Gagal memuat accounts: ${e.message}</div>`;
+    }
+  }
+
+  function renderProviderOverview() {
+    const wrap = document.getElementById('providers-overview');
+    if (!allProviders.length) { wrap.innerHTML = ''; return; }
+    wrap.innerHTML = allProviders.map(p => {
+      const pid = p.id ?? p.name;
+      const pname = p.name ?? p.id;
+      const accts = allAccounts.filter(a => (a.providerId ?? a.provider) === pid);
+      const active = accts.filter(a => a.active !== false).length;
+      const customBadge = p.custom ? ' <span class="badge badge-accent" style="font-size:10px;margin-left:4px;">Custom</span>' : '';
+      return `<div class="card" style="flex:1;min-width:160px;padding:16px;">
+        <div class="stat-label" style="font-size:13px;color:var(--sb-ink-mute);text-transform:uppercase;letter-spacing:0.05em;">${pname}${customBadge}</div>
+        <div style="font-size:24px;font-weight:700;margin:6px 0;">${accts.length}</div>
+        <div class="muted" style="font-size:13px;">${active} aktif</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderAccountsTable() {
+    const wrap = document.getElementById('accounts-table-wrap');
+    if (!allAccounts.length) {
+      wrap.innerHTML = '<p class="muted">Belum ada akun. Tambahkan di form atas.</p>';
+      return;
+    }
+    const provMap = {};
+    allProviders.forEach(p => { provMap[p.id ?? p.name] = p.name ?? p.id; });
+    wrap.innerHTML = `<table class="table">
+      <thead><tr>
+        <th>Provider</th><th>Nama</th><th>Credential</th><th>Priority</th><th>Status</th><th>Cooldown</th><th>Aksi</th>
+      </tr></thead>
+      <tbody>${allAccounts.map(a => {
+        const pid = a.providerId ?? a.provider ?? '';
+        const pname = provMap[pid] ?? pid;
+        const isActive = a.active !== false;
+        const cooldown = a.cooldownUntil
+          ? (new Date(a.cooldownUntil) > new Date()
+              ? `<span class="badge badge-warn">Cooldown</span>`
+              : `<span class="badge badge-ok">Ready</span>`)
+          : '<span class="muted">—</span>';
+        return `<tr data-id="${a.id}">
+          <td><code class="mono" style="color:var(--sb-primary);">${pname}</code></td>
+          <td>${a.name ?? ''}</td>
+          <td class="mono muted" style="font-size:12px;">${a.credentialHint ?? maskCred(a.credential) ?? '—'}</td>
+          <td>${a.priority ?? 0}</td>
+          <td>${isActive ? '<span class="badge badge-ok">Active</span>' : '<span class="badge badge-err">Off</span>'}</td>
+          <td>${cooldown}</td>
+          <td>
+            <button class="btn btn-ghost btn-sm toggle-btn" data-id="${a.id}" data-active="${isActive}">${isActive ? 'Nonaktifkan' : 'Aktifkan'}</button>
+            <button class="btn btn-ghost btn-sm edit-btn" data-id="${a.id}" style="margin-left:4px;">Edit</button>
+            <button class="btn btn-danger btn-sm delete-btn" data-id="${a.id}" style="margin-left:4px;">Hapus</button>
+          </td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+
+    document.querySelectorAll('.toggle-btn').forEach(btn =>
+      btn.addEventListener('click', () => toggleActive(btn.dataset.id, btn.dataset.active === 'true')));
+    document.querySelectorAll('.edit-btn').forEach(btn =>
+      btn.addEventListener('click', () => editAccount(btn.dataset.id)));
+    document.querySelectorAll('.delete-btn').forEach(btn =>
+      btn.addEventListener('click', () => deleteAccount(btn.dataset.id)));
+  }
+
+  function maskCred(cred) {
+    if (!cred) return null;
+    if (cred.length <= 8) return '****';
+    return cred.slice(0, 4) + '...' + cred.slice(-4);
+  }
+
+  async function toggleActive(id, currentlyActive) {
+    try {
+      const resp = await fetch(`/api/console/accounts/${id}`, {
+        method: 'PATCH',
+        headers: headers(),
+        body: JSON.stringify({ active: !currentlyActive }),
+      });
+      if (resp.status === 401) { handle401(); return; }
+      if (resp.ok) loadAccounts();
+      else alert('Gagal mengubah status');
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+
+  function editAccount(id) {
+    const a = allAccounts.find(x => String(x.id) === String(id));
+    if (!a) return;
+    document.getElementById('account-id').value = a.id;
+    const pid = a.providerId ?? a.provider ?? '';
+    document.getElementById('provider-select').value = pid;
+    document.getElementById('account-name').value = a.name ?? '';
+    document.getElementById('account-credential').value = '';
+    document.getElementById('account-credential').placeholder = '(biarkan kosong untuk tidak mengubah)';
+    document.getElementById('account-priority').value = a.priority ?? 0;
+    document.getElementById('account-active').checked = a.active !== false;
+    document.getElementById('cancel-btn').style.display = 'inline-block';
+    document.getElementById('form-title').textContent = 'Edit Akun';
+    window.scrollTo(0, 0);
+  }
+
+  async function deleteAccount(id) {
+    if (!confirm('Hapus akun ini? Tindakan ini tidak bisa dibatalkan.')) return;
+    try {
+      const resp = await fetch(`/api/console/accounts/${id}`, {
+        method: 'DELETE',
+        headers: headers(),
+      });
+      if (resp.status === 401) { handle401(); return; }
+      if (resp.ok) loadAccounts();
+      else alert('Gagal menghapus akun');
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+
+  document.getElementById('account-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('account-id').value;
+    const credential = document.getElementById('account-credential').value;
+    const body = {
+      provider: document.getElementById('provider-select').value,
+      name: document.getElementById('account-name').value,
+      priority: parseInt(document.getElementById('account-priority').value) || 0,
+      active: document.getElementById('account-active').checked,
+    };
+    if (credential) body.credential = credential;
+    const url = id ? `/api/console/accounts/${id}` : `/api/console/accounts`;
+    const method = id ? 'PATCH' : 'POST';
+    try {
+      const resp = await fetch(url, { method, headers: headers(), body: JSON.stringify(body) });
+      if (resp.status === 401) { handle401(); return; }
+      if (resp.ok) {
+        document.getElementById('account-form').reset();
+        document.getElementById('account-id').value = '';
+        document.getElementById('cancel-btn').style.display = 'none';
+        document.getElementById('form-title').textContent = 'Tambah Akun';
+        loadAccounts();
+      } else {
+        const data = await resp.json().catch(() => ({}));
+        alert(data?.error?.message ?? 'Gagal menyimpan akun');
+      }
+    } catch (e) { alert('Error: ' + e.message); }
+  });
+
+  document.getElementById('cancel-btn')?.addEventListener('click', () => {
+    document.getElementById('account-form').reset();
+    document.getElementById('account-id').value = '';
+    document.getElementById('cancel-btn').style.display = 'none';
+    document.getElementById('form-title').textContent = 'Tambah Akun';
+    document.getElementById('account-credential').placeholder = 'sk-...';
+  });
+</script>

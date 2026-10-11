@@ -1,0 +1,141 @@
+---
+// Dashboard / admin shell. Sidebar nav + topbar + content slot.
+//
+// The nav set switches on the path: /admin/* uses the admin links, everything
+// else uses the console (app) links. The sidebar is a drawer below 1024px.
+import DashIcon from '../components/DashIcon.astro';
+import { getSessionUser, logoutEverywhere, type SessionUser } from '../lib/api/session';
+import '../styles/tokens.css';
+import '../styles/skin.css';
+import '../styles/dashboard.css';
+
+interface Props {
+  title: string;
+  description?: string;
+  subtitle?: string;
+  user?: SessionUser | null;
+}
+
+const { title, description = 'bansosAI — satu API OpenAI-compatible untuk semua model AI.', subtitle, user } = Astro.props;
+
+const path = Astro.url.pathname;
+const isAdmin = path.startsWith('/admin');
+const sessionUser = user ?? (await getSessionUser(Astro));
+
+const appLinks = [
+  { href: '/app', label: 'Dashboard', icon: 'dashboard' },
+  { href: '/app/usage', label: 'Usage', icon: 'usage' },
+  { href: '/app/keys', label: 'API Keys', icon: 'keys' },
+  { href: '/app/playground', label: 'Playground', icon: 'playground' },
+  { href: '/app/models', label: 'Models', icon: 'models' },
+  { href: '/model-ranking', label: 'Ranking', icon: 'ranking' },
+  { href: '/app/billing', label: 'Billing', icon: 'billing' },
+  { href: '/app/settings', label: 'Settings', icon: 'settings' },
+];
+
+const adminLinks = [
+  { href: '/admin', label: 'Overview', icon: 'dashboard' },
+  { href: '/admin/users', label: 'Users', icon: 'users' },
+  { href: '/admin/models', label: 'Models', icon: 'models' },
+  { href: '/admin/providers', label: 'Providers', icon: 'activity' },
+  { href: '/admin/usage', label: 'Usage', icon: 'usage' },
+  { href: '/admin/settings', label: 'Settings', icon: 'settings' },
+  { href: '/admin/subs', label: 'Subscriptions', icon: 'billing' },
+  { href: '/admin/promos', label: 'Promos', icon: 'billing' },
+  { href: '/admin/plans', label: 'Plans', icon: 'billing' },
+  { href: '/admin/combos', label: 'Combos', icon: 'models' },
+];
+
+const links = isAdmin ? adminLinks : appLinks;
+const isActive = (href: string) => (href === '/app' || href === '/admin' ? path === href : path.startsWith(href));
+
+const email = sessionUser?.email ?? 'Akun bansosAI';
+const avatar = (sessionUser?.email || 'B').trim().charAt(0).toUpperCase();
+const roleLabel = sessionUser ? (sessionUser.role === 'admin' ? 'Admin' : 'Member bansosAI') : 'AI aggregator';
+---
+
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} — bansosAI</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={`${title} — bansosAI`} />
+    <meta property="og:description" content={description} />
+    <meta name="theme-color" content="#000000" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/bansosai-touch.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <div class="sidebar-overlay" data-sidebar-overlay hidden></div>
+      <aside class="sidebar" data-sidebar>
+        <a class="sidebar-brand" href="/">
+          <img class="brand-mark" src="/bansosai-mark.png" alt="" width="28" height="28" />
+          bansos<span>AI</span>
+        </a>
+        <nav class="sidebar-nav">
+          <div class="sidebar-section">{isAdmin ? 'Admin' : 'Console'}</div>
+          {links.map((link) => (
+            <a href={link.href} class={`nav-link ${isActive(link.href) ? 'active' : ''}`}>
+              <DashIcon name={link.icon} class="nav-icon" />
+              <span>{link.label}</span>
+            </a>
+          ))}
+        </nav>
+        <div class="sidebar-user">
+          <span class="avatar">{avatar}</span>
+          <span class="who">
+            <b>{email}</b>
+            <span>{roleLabel}</span>
+          </span>
+          <form method="POST" action="/api/logout">
+            <button type="submit" class="btn btn-ghost btn-sm" aria-label="Keluar" title="Keluar">
+              <DashIcon name="logout" size={15} />
+            </button>
+          </form>
+        </div>
+      </aside>
+
+      <div class="app-main">
+        <header class="app-topbar">
+          <button class="sidebar-toggle" type="button" aria-label="Buka menu" data-sidebar-toggle>
+            <DashIcon name="menu" size={20} />
+          </button>
+          <div>
+            <h1>{title}</h1>
+            {subtitle && <p class="topbar-sub">{subtitle}</p>}
+          </div>
+          <nav class="app-topbar-nav">
+            <a href="/models">Katalog</a>
+            <a href="/docs">Docs</a>
+          </nav>
+        </header>
+
+        <main class="app-content">
+          <slot />
+        </main>
+
+        <footer class="app-footer">bansosAI — API gateway multi-model. © 2026</footer>
+      </div>
+    </div>
+
+    <script>
+      const sidebar = document.querySelector('[data-sidebar]');
+      const overlay = document.querySelector('[data-sidebar-overlay]');
+      const toggle = document.querySelector('[data-sidebar-toggle]');
+      const setOpen = (open: boolean) => {
+        sidebar?.setAttribute('data-open', String(open));
+        if (overlay) (overlay as HTMLElement).hidden = !open;
+      };
+      toggle?.addEventListener('click', () => setOpen(sidebar?.getAttribute('data-open') !== 'true'));
+      overlay?.addEventListener('click', () => setOpen(false));
+    </script>
+  </body>
+</html>

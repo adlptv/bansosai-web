@@ -1,0 +1,354 @@
+---
+// /admin/usage — usage analytics: request/token/latency stats + breakdowns.
+// Gated server-side by the console JWT; the client reuses that token to call
+// /api/console/* (relayed to the gateway by src/pages/api/console/[...path].ts).
+import AppShell from '../../layouts/AppShell.astro';
+import { requireAdminPage } from '../../lib/api/admin';
+import { getSessionUser } from '../../lib/api/session';
+
+const gate = await requireAdminPage(Astro);
+if (gate) return gate;
+
+const user = await getSessionUser(Astro);
+---
+
+<AppShell
+  title="Usage Analytics"
+  subtitle="Statistik penggunaan API: request, token, latency, dan breakdown per model/key/user."
+  user={user}
+>
+  <div id="admin-content">
+    <div style="display:flex;gap:8px;margin-bottom:24px;align-items:center;">
+      <span class="muted" style="font-size:14px;">Periode:</span>
+      <button class="btn btn-sm period-btn" data-period="1h">1 Jam</button>
+      <button class="btn btn-sm period-btn btn-primary" data-period="24h">24 Jam</button>
+      <button class="btn btn-sm period-btn" data-period="7d">7 Hari</button>
+      <button class="btn btn-sm period-btn" data-period="30d">30 Hari</button>
+    </div>
+    <div id="load-err"></div>
+
+    <div
+      id="summary-cards"
+      style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px;"
+    >
+      <div class="card stat-card" style="padding:20px;">
+        <div class="stat-label">Total Request</div>
+        <div class="stat-value" id="stat-requests">—</div>
+      </div>
+      <div class="card stat-card" style="padding:20px;">
+        <div class="stat-label">Input Tokens</div>
+        <div class="stat-value" id="stat-input-tokens">—</div>
+      </div>
+      <div class="card stat-card" style="padding:20px;">
+        <div class="stat-label">Output Tokens</div>
+        <div class="stat-value" id="stat-output-tokens">—</div>
+      </div>
+      <div class="card stat-card" style="padding:20px;">
+        <div class="stat-label">Avg Latency</div>
+        <div class="stat-value" id="stat-latency">—</div>
+      </div>
+      <div class="card stat-card" style="padding:20px;">
+        <div class="stat-label">Errors</div>
+        <div class="stat-value" id="stat-errors" style="color:var(--sb-status-danger);">—</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:24px;">
+      <h3 style="margin-bottom:16px;">Request per Periode</h3>
+      <div id="chart-wrap" style="overflow-x:auto;">
+        <p class="muted">Memuat chart...</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:24px;">
+      <h3 style="margin-bottom:16px;">Usage by Model</h3>
+      <div id="by-model-wrap" class="table-wrap">
+        <p class="muted">Memuat...</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:24px;">
+      <h3 style="margin-bottom:16px;">Usage by API Key</h3>
+      <div id="by-key-wrap" class="table-wrap">
+        <p class="muted">Memuat...</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-bottom:16px;">Usage by User</h3>
+      <div id="by-user-wrap" class="table-wrap">
+        <p class="muted">Memuat...</p>
+      </div>
+    </div>
+  </div>
+
+  <style is:global>
+    .card {
+      padding: var(--sb-lg);
+      background: var(--sb-canvas-raised);
+      border: 1px solid var(--sb-hairline);
+      border-radius: var(--sb-r-lg);
+      box-shadow: var(--sb-elev-1);
+    }
+    .table { width: 100%; border-collapse: collapse; font-size: var(--sb-caption); }
+    .table th,
+    .table td {
+      padding: var(--sb-md) var(--sb-lg);
+      text-align: left;
+      vertical-align: middle;
+      border-bottom: 1px solid var(--sb-hairline);
+    }
+    .table th { color: var(--sb-ink-mute); font-weight: 500; background: var(--sb-canvas-night); }
+    .table tbody tr:hover td { background: var(--sb-canvas-night); }
+    .table-wrap { width: 100%; overflow-x: auto; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sb-xs);
+      padding: 2px var(--sb-sm);
+      border: 1px solid var(--sb-hairline-strong);
+      border-radius: var(--sb-r-full);
+      background: var(--sb-canvas-raised);
+      color: var(--sb-ink);
+      font-size: var(--sb-micro);
+      font-weight: 500;
+    }
+    .badge-ok { border-color: var(--sb-status-success); color: var(--sb-status-success); }
+    .stat-card { border-radius: var(--sb-r-md); }
+    .stat-label { font-size: var(--sb-caption); color: var(--sb-ink-mute); }
+    .stat-value { font-size: var(--sb-display-md); font-weight: 500; letter-spacing: var(--sb-display-md-ls); }
+  </style>
+
+  <script is:inline>
+    // Console token store (mirrors /js/admin-session.js from the pre-rebuild app).
+    // The console_jwt cookie is intentionally script-readable: the page scripts
+    // send it as an Authorization: Bearer header to /api/console/*.
+    window.adminSession = (function () {
+      var NAME = 'console_jwt';
+      var MAX_AGE = 12 * 3600;
+      function get() {
+        var parts = String(document.cookie || '').split(';');
+        for (var i = 0; i < parts.length; i++) {
+          var pair = parts[i].trim();
+          if (pair.indexOf(NAME + '=') === 0) return decodeURIComponent(pair.slice(NAME.length + 1));
+        }
+        return '';
+      }
+      function set(token) {
+        if (!token) return;
+        var attrs = '; Path=/; SameSite=Lax; Max-Age=' + MAX_AGE;
+        if (location.protocol === 'https:') attrs += '; Secure';
+        document.cookie = NAME + '=' + encodeURIComponent(token) + attrs;
+      }
+      function clear() { document.cookie = NAME + '=; Path=/; SameSite=Lax; Max-Age=0'; }
+      return { get: get, set: set, clear: clear };
+    })();
+  </script>
+
+  <script is:inline>
+    let token = window.adminSession.get();
+    let currentPeriod = '24h';
+    let usagePoller = null;
+
+    function headers() {
+      return { 'content-type': 'application/json', 'authorization': 'Bearer ' + token };
+    }
+
+    // The page is gated server-side: reaching this script means the gateway
+    // already verified the console token. The client only needs the token to
+    // authorize its own /api/console/* calls.
+    showContent();
+
+    function handle401() {
+      window.adminSession.clear();
+      token = '';
+      window.location.href = '/login?err=' + encodeURIComponent('Sesi admin berakhir, login ulang.');
+    }
+
+    function showContent() {
+      loadAll();
+      // Realtime polling — refresh usage data every 30s
+      if (usagePoller) clearInterval(usagePoller);
+      usagePoller = setInterval(function () { loadAll(); }, 30000);
+    }
+
+    async function loadAll() {
+      await Promise.all([
+        loadSummary(),
+        loadChart(),
+        loadByModel(),
+        loadByKey(),
+        loadByUser(),
+      ]);
+    }
+
+    // Period selector
+    document.querySelectorAll('.period-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        currentPeriod = btn.dataset.period;
+        document.querySelectorAll('.period-btn').forEach(function (b) {
+          b.classList.remove('btn-primary');
+          b.classList.add('btn-ghost');
+        });
+        btn.classList.remove('btn-ghost');
+        btn.classList.add('btn-primary');
+        loadAll();
+      });
+    });
+
+    async function loadSummary() {
+      try {
+        const resp = await fetch('/api/console/usage/summary?period=' + currentPeriod, { headers: headers() });
+        if (resp.status === 401) { handle401(); return; }
+        const d = await resp.json();
+        document.getElementById('stat-requests').textContent = fmtNum(d.totalRequests ?? d.requests ?? 0);
+        document.getElementById('stat-input-tokens').textContent = fmtNum(d.inputTokens ?? d.input_tokens ?? 0);
+        document.getElementById('stat-output-tokens').textContent = fmtNum(d.outputTokens ?? d.output_tokens ?? 0);
+        const latMs = d.avgDurationMs ?? d.avgLatencyMs ?? d.avg_latency_ms;
+        document.getElementById('stat-latency').textContent = latMs != null ? fmtMs(latMs) : '—';
+        document.getElementById('stat-errors').textContent = fmtNum(d.errors ?? d.errorCount ?? 0);
+      } catch (e) {
+        console.error('summary error', e);
+      }
+    }
+
+    async function loadChart() {
+      try {
+        const resp = await fetch('/api/console/usage/chart?period=' + (currentPeriod === '1h' || currentPeriod === '24h' ? '7d' : currentPeriod), { headers: headers() });
+        if (resp.status === 401) { handle401(); return; }
+        const data = await resp.json();
+        const buckets = data.buckets ?? data.items ?? data ?? [];
+        renderChart(buckets);
+      } catch (e) {
+        document.getElementById('chart-wrap').innerHTML = '<p class="muted">Chart tidak tersedia.</p>';
+      }
+    }
+
+    function renderChart(buckets) {
+      const wrap = document.getElementById('chart-wrap');
+      if (!Array.isArray(buckets) || buckets.length === 0) {
+        wrap.innerHTML = '<p class="muted">Tidak ada data chart untuk periode ini.</p>';
+        return;
+      }
+      const maxVal = Math.max.apply(null, buckets.map(function (b) { return b.requests ?? b.count ?? b.value ?? 0; }).concat([1]));
+      const barWidth = Math.max(Math.floor(700 / buckets.length) - 4, 12);
+      wrap.innerHTML =
+        '<div style="display:flex;align-items:flex-end;gap:4px;height:140px;padding:8px 0;">' +
+        buckets.map(function (b) {
+          const val = b.requests ?? b.count ?? b.value ?? 0;
+          const pct = Math.round((val / maxVal) * 100);
+          const label = b.label ?? b.date ?? b.time ?? b.bucket ?? '';
+          return '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:' + barWidth + 'px;">' +
+            '<div style="font-size:11px;color:var(--sb-ink-mute);">' + (val > 0 ? fmtNum(val) : '') + '</div>' +
+            '<div title="' + label + ': ' + fmtNum(val) + ' requests"' +
+            ' style="width:' + barWidth + 'px;height:' + Math.max(pct, 2) + '%;background:var(--sb-primary);border-radius:4px 4px 0 0;transition:opacity 0.2s;"' +
+            ' onmouseover="this.style.opacity=\'0.75\'" onmouseout="this.style.opacity=\'1\'"></div>' +
+            '<div style="font-size:10px;color:var(--sb-ink-mute);white-space:nowrap;transform:rotate(-45deg);transform-origin:top center;margin-top:4px;">' + shortLabel(label) + '</div>' +
+          '</div>';
+        }).join('') +
+        '</div>';
+    }
+
+    function shortLabel(l) {
+      if (!l) return '';
+      const s = String(l);
+      // "2024-01-15" -> "01-15", "14:00" stays
+      return s.length > 7 ? s.slice(5) : s;
+    }
+
+    async function loadByModel() {
+      try {
+        const resp = await fetch('/api/console/usage/by-model?period=' + currentPeriod, { headers: headers() });
+        if (resp.status === 401) { handle401(); return; }
+        const data = await resp.json();
+        const rows = data.rows ?? data.items ?? data ?? [];
+        const wrap = document.getElementById('by-model-wrap');
+        if (!rows.length) { wrap.innerHTML = '<p class="muted">Tidak ada data.</p>'; return; }
+        wrap.innerHTML = '<table class="table">' +
+          '<thead><tr><th>Model</th><th>Requests</th><th>Input Tokens</th><th>Output Tokens</th><th>Errors</th><th>Avg Latency</th></tr></thead>' +
+          '<tbody>' + rows.map(function (r) {
+            return '<tr>' +
+              '<td><code class="mono" style="color:var(--sb-primary);">' + (r.model ?? r.modelId ?? '—') + '</code></td>' +
+              '<td>' + fmtNum(r.requests ?? r.count ?? 0) + '</td>' +
+              '<td>' + fmtNum(r.inputTokens ?? r.input_tokens ?? 0) + '</td>' +
+              '<td>' + fmtNum(r.outputTokens ?? r.output_tokens ?? 0) + '</td>' +
+              '<td>' + ((r.errors ?? 0) > 0 ? '<span style="color:var(--sb-status-danger);">' + fmtNum(r.errors) + '</span>' : '0') + '</td>' +
+              '<td class="muted">' + (r.avgDurationMs != null ? fmtMs(r.avgDurationMs) : '—') + '</td>' +
+            '</tr>';
+          }).join('') + '</tbody></table>';
+      } catch (e) {
+        document.getElementById('by-model-wrap').innerHTML = '<p class="muted">Gagal memuat.</p>';
+      }
+    }
+
+    async function loadByKey() {
+      try {
+        const resp = await fetch('/api/console/usage/by-key?period=' + currentPeriod, { headers: headers() });
+        if (resp.status === 401) { handle401(); return; }
+        const data = await resp.json();
+        const rows = data.rows ?? data.items ?? data ?? [];
+        const wrap = document.getElementById('by-key-wrap');
+        if (!rows.length) { wrap.innerHTML = '<p class="muted">Tidak ada data.</p>'; return; }
+        wrap.innerHTML = '<table class="table">' +
+          '<thead><tr><th>Key</th><th>Requests</th><th>Input Tokens</th><th>Output Tokens</th><th>Errors</th><th>Last Used</th></tr></thead>' +
+          '<tbody>' + rows.map(function (r) {
+            return '<tr>' +
+              '<td><code class="mono" style="font-size:12px;">' + (r.keyHint ?? r.key ?? r.apiKey ?? '—') + '</code></td>' +
+              '<td>' + fmtNum(r.requests ?? r.count ?? 0) + '</td>' +
+              '<td>' + fmtNum(r.inputTokens ?? r.input_tokens ?? 0) + '</td>' +
+              '<td>' + fmtNum(r.outputTokens ?? r.output_tokens ?? 0) + '</td>' +
+              '<td>' + ((r.errors ?? 0) > 0 ? '<span style="color:var(--sb-status-danger);">' + fmtNum(r.errors) + '</span>' : '0') + '</td>' +
+              '<td class="muted">' + (r.lastUsedAt ? fmtDate(r.lastUsedAt) : '—') + '</td>' +
+            '</tr>';
+          }).join('') + '</tbody></table>';
+      } catch (e) {
+        document.getElementById('by-key-wrap').innerHTML = '<p class="muted">Gagal memuat.</p>';
+      }
+    }
+
+    async function loadByUser() {
+      try {
+        const resp = await fetch('/api/console/saas/usage/by-user?period=' + currentPeriod, { headers: headers() });
+        if (resp.status === 401) { handle401(); return; }
+        const data = await resp.json();
+        const rows = data.rows ?? data.items ?? data ?? [];
+        const wrap = document.getElementById('by-user-wrap');
+        if (!rows.length) { wrap.innerHTML = '<p class="muted">Tidak ada data.</p>'; return; }
+        wrap.innerHTML = '<table class="table">' +
+          '<thead><tr><th>User</th><th>Plan</th><th>Requests</th><th>Input Tokens</th><th>Output Tokens</th><th>Total Tokens</th></tr></thead>' +
+          '<tbody>' + rows.map(function (r) {
+            const inp = r.inputTokens ?? r.input_tokens ?? 0;
+            const out = r.outputTokens ?? r.output_tokens ?? 0;
+            return '<tr>' +
+              '<td>' + (r.email ?? r.userId ?? r.user ?? '—') + '</td>' +
+              '<td>' + (r.plan ? '<span class="badge badge-ok">' + r.plan + '</span>' : '<span class="muted">—</span>') + '</td>' +
+              '<td>' + fmtNum(r.requests ?? r.count ?? 0) + '</td>' +
+              '<td>' + fmtNum(inp) + '</td>' +
+              '<td>' + fmtNum(out) + '</td>' +
+              '<td><strong>' + fmtNum(inp + out) + '</strong></td>' +
+            '</tr>';
+          }).join('') + '</tbody></table>';
+      } catch (e) {
+        document.getElementById('by-user-wrap').innerHTML = '<p class="muted">Gagal memuat.</p>';
+      }
+    }
+
+    function fmtNum(n) {
+      if (n == null) return '—';
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+      return String(n);
+    }
+
+    function fmtMs(ms) {
+      if (ms == null) return '—';
+      if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
+      return Math.round(ms) + 'ms';
+    }
+
+    function fmtDate(iso) {
+      try { return new Date(iso).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }); }
+      catch (e) { return iso; }
+    }
+  </script>
+</AppShell>

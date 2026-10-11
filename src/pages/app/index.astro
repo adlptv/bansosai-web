@@ -1,0 +1,111 @@
+---
+// /app — user dashboard home: plan, quota, usage sparkline, subscription info.
+import AppShell from '../../layouts/AppShell.astro';
+import Flash from '../../components/Flash.astro';
+import { getSessionUser, getToken } from '../../lib/api/session';
+import { apiGet } from '../../lib/api/saas';
+import { formatNumber, formatWib } from '../../lib/format';
+import type { DashboardResponse, UsageHistoryResponse } from '../../lib/api/client';
+
+const user = await getSessionUser(Astro);
+if (!user) return Astro.redirect('/login');
+
+const token = getToken(Astro)!;
+let dash: DashboardResponse | null = null;
+let history: { date: string; tokens: number }[] = [];
+let loadErr = '';
+try {
+  dash = await apiGet<DashboardResponse>('/saas/api/dashboard', token, Astro.request);
+  const h = await apiGet<UsageHistoryResponse>('/saas/api/usage-history', token, Astro.request);
+  history = (h.days ?? []).map((d) => ({ date: d.date, tokens: d.tokens }));
+} catch (e) {
+  loadErr = e instanceof Error ? e.message : 'Gagal memuat data.';
+}
+
+const plan = dash?.plan;
+const sub = dash?.subscription;
+const quota = dash?.quota;
+const dashUser = dash?.user;
+const pct = quota?.total ? Math.min(100, Math.round((quota.used / quota.total) * 100)) : 0;
+const fmtTok = (n: number | null | undefined) => (n === null || n === undefined ? 'Unlimited' : formatNumber(n));
+const maxDay = Math.max(1, ...history.map((d) => d.tokens));
+const role = dashUser?.role ?? 'user';
+const isSupporter = dashUser?.isSupporter === true;
+const roleClass: Record<string, string> = { user: 'pill', pro: 'pill pill-info', enterprise: 'pill pill-info', admin: 'pill pill-err' };
+const statusLabel: Record<string, string> = { active: 'Aktif', expired: 'Kedaluwarsa', canceled: 'Dibatalkan', pending: 'Menunggu' };
+const fmtDate = (d?: string) => (d ? formatWib(d) : '—');
+---
+
+<AppShell title="Dashboard" subtitle="Ringkasan akun dan pemakaian" user={user}>
+  {loadErr && <Flash kind="err" message={loadErr} />}
+
+  <div class="dash-grid">
+    <div class="dash-card">
+      <h3>Plan Aktif</h3>
+      <div class="dash-value" style="display:flex;align-items:center;gap:8px">
+        <span>{plan?.name ?? '—'}</span>
+        {isSupporter && <span class="pill pill-ok" title="Free tier tanpa batas kuota">Supporter</span>}
+      </div>
+      {sub && (
+        <p>
+          Status <b>{statusLabel[sub.status] ?? sub.status}</b> · aktif sampai {fmtDate(sub.expiresAtWib)}
+        </p>
+      )}
+      <p>RPM: {plan?.rpmLimit ?? 'Unlimited'} · Key aktif: {dash?.activeKeys ?? 0}</p>
+    </div>
+
+    <div class="dash-card">
+      <h3>Kuota Token</h3>
+      <div class="dash-value">{fmtTok(quota?.used ?? 0)}</div>
+      <p>dari {quota?.total ? fmtTok(quota.total) : 'Unlimited'}</p>
+      <div class="progress" style="margin-top:var(--sb-md)">
+        <span style={`width:${pct}%`}></span>
+      </div>
+      <p>{pct}% terpakai</p>
+    </div>
+
+    <div class="dash-card">
+      <h3>Role</h3>
+      <div><span class={roleClass[role] ?? 'pill'}>{role}</span></div>
+      <p>{isSupporter ? 'Supporter aktif' : 'Akun standar'}</p>
+    </div>
+  </div>
+
+  <div class="dash-card" style="margin-top:var(--sb-lg)">
+    <h3>Pemakaian 14 Hari</h3>
+    {history.length === 0 ? (
+      <p class="muted">Belum ada pemakaian.</p>
+    ) : (
+      <div style="display:flex;align-items:flex-end;gap:6px;height:120px;margin-top:var(--sb-md)">
+        {history.map((d) => (
+          <div
+            title={`${d.date}: ${formatNumber(d.tokens)} token`}
+            style={`flex:1;min-width:6px;height:${Math.max(2, Math.round((d.tokens / maxDay) * 100))}%;background:var(--sb-primary);border-radius:2px`}
+          ></div>
+        ))}
+      </div>
+    )}
+  </div>
+
+  <div class="dash-card" style="margin-top:var(--sb-lg)">
+    <h3>Info Langganan</h3>
+    <div class="dash-grid">
+      <div>
+        <p class="muted small">Plan</p>
+        <p><b>{plan?.name ?? '—'}</b></p>
+      </div>
+      <div>
+        <p class="muted small">Role</p>
+        <p><span class={roleClass[role] ?? 'pill'}>{role}</span></p>
+      </div>
+      <div>
+        <p class="muted small">Aktif sampai</p>
+        <p><b>{sub ? fmtDate(sub.expiresAtWib) : '—'}</b></p>
+      </div>
+      <div>
+        <p class="muted small">Status</p>
+        <p><b>{sub ? (statusLabel[sub.status] ?? sub.status) : '—'}</b></p>
+      </div>
+    </div>
+  </div>
+</AppShell>

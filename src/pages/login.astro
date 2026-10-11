@@ -6,7 +6,7 @@ import { consumeHandoff, sessionCookie, redirectWith } from '../lib/api/auth';
 const params = Astro.url.searchParams;
 const oauthStatus = params.get('oauth');
 const handoff = params.get('handoff');
-const errorMessage = params.get('error');
+const errorMessage = params.get('error') ?? params.get('err');
 const justRegistered = params.get('registered') === '1';
 const prefillEmail = params.get('email') ?? '';
 
@@ -69,7 +69,7 @@ const notice = errorMessage
 
       <div class="auth-sep">atau email</div>
 
-      <form method="POST" action="/api/auth/login">
+      <form method="POST" action="/api/login">
         <div class="field">
           <label class="label" for="login-email">Email</label>
           <input id="login-email" class="input" type="email" name="email" required autocomplete="email" value={prefillEmail} />

@@ -1,0 +1,236 @@
+---
+// /admin/plans — plans & pricing editor: price, slot limit, token quota, RPM,
+// active toggle. Reads/writes /api/console/saas/plans.
+import AppShell from '../../layouts/AppShell.astro';
+import { requireAdminPage } from '../../lib/api/admin';
+import { getSessionUser } from '../../lib/api/session';
+
+const gate = await requireAdminPage(Astro);
+if (gate) return gate;
+
+const user = await getSessionUser(Astro);
+---
+
+<AppShell title="Plans & Pricing" subtitle="Atur harga paket, slot limit, dan kuota." user={user}>
+  <p class="muted" style="margin-bottom:8px;">
+    Atur harga paket, slot limit, dan kuota. Harga di sini adalah nominal <b>mutlak</b> yang
+    dibayar customer (customer tidak bisa mengubah nominal saat checkout).
+  </p>
+  <p class="muted" style="margin-bottom:24px;">
+    <b>Slot limit</b> membatasi jumlah pembeli (mis. 100 = hanya 100 orang bisa beli); begitu penuh,
+    checkout ditolak dan pembayaran yang sempat masuk di-refund ke balance otomatis.
+  </p>
+
+  <div data-last-updated style="font-size:12px;color:var(--sb-ink-mute);margin-bottom:16px;"></div>
+  <div id="load-err"></div>
+
+  <div class="card">
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Plan</th>
+            <th>Periode</th>
+            <th>Harga (IDR)</th>
+            <th>Slot Limit</th>
+            <th>Kuota Token</th>
+            <th>RPM</th>
+            <th>Status</th>
+            <th>Terjual</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="plans-wrap">
+          <tr>
+            <td colspan="9" class="muted">Memuat...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <style is:global>
+    .card {
+      padding: var(--sb-lg);
+      background: var(--sb-canvas-raised);
+      border: 1px solid var(--sb-hairline);
+      border-radius: var(--sb-r-lg);
+      box-shadow: var(--sb-elev-1);
+    }
+    .table { width: 100%; border-collapse: collapse; font-size: var(--sb-caption); }
+    .table th,
+    .table td {
+      padding: var(--sb-md) var(--sb-lg);
+      text-align: left;
+      vertical-align: middle;
+      border-bottom: 1px solid var(--sb-hairline);
+    }
+    .table th { color: var(--sb-ink-mute); font-weight: 500; background: var(--sb-canvas-night); }
+    .table tbody tr:hover td { background: var(--sb-canvas-night); }
+    .table-wrap { width: 100%; overflow-x: auto; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sb-xs);
+      padding: 2px var(--sb-sm);
+      border: 1px solid var(--sb-hairline-strong);
+      border-radius: var(--sb-r-full);
+      background: var(--sb-canvas-raised);
+      color: var(--sb-ink);
+      font-size: var(--sb-micro);
+      font-weight: 500;
+    }
+    .badge-ok { border-color: var(--sb-status-success); color: var(--sb-status-success); }
+    .badge-err { border-color: var(--sb-status-danger); color: var(--sb-status-danger); }
+    .flash { padding: var(--sb-md) var(--sb-lg); border: 1px solid var(--sb-hairline-strong); border-left-width: 3px; border-radius: var(--sb-r-sm); background: var(--sb-canvas-raised); font-size: var(--sb-caption); }
+    .flash-err { border-left-color: var(--sb-status-danger); }
+    .btn-danger { background: var(--sb-canvas-raised); border-color: var(--sb-status-danger); color: var(--sb-status-danger); }
+    .btn-danger:hover { background: var(--sb-status-danger); color: var(--sb-on-primary); }
+  </style>
+
+  <script is:inline>
+    window.adminSession = (function () {
+      var NAME = 'console_jwt';
+      var MAX_AGE = 12 * 3600;
+      function get() {
+        var parts = String(document.cookie || '').split(';');
+        for (var i = 0; i < parts.length; i++) {
+          var pair = parts[i].trim();
+          if (pair.indexOf(NAME + '=') === 0) return decodeURIComponent(pair.slice(NAME.length + 1));
+        }
+        return '';
+      }
+      function set(token) {
+        if (!token) return;
+        var attrs = '; Path=/; SameSite=Lax; Max-Age=' + MAX_AGE;
+        if (location.protocol === 'https:') attrs += '; Secure';
+        document.cookie = NAME + '=' + encodeURIComponent(token) + attrs;
+      }
+      function clear() { document.cookie = NAME + '=; Path=/; SameSite=Lax; Max-Age=0'; }
+      return { get: get, set: set, clear: clear };
+    })();
+  </script>
+
+  <script is:inline>
+    let token = window.adminSession.get();
+    let allPlans = [];
+    let pollTimer = null;
+
+    function headers() {
+      return { 'content-type': 'application/json', 'authorization': 'Bearer ' + token };
+    }
+    function handle401() {
+      window.adminSession.clear();
+      token = '';
+      window.location.href = '/login?err=' + encodeURIComponent('Sesi admin berakhir, login ulang.');
+    }
+    async function showContent() {
+      await loadPlans();
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(function () { loadPlans(); }, 30000);
+    }
+    async function loadPlans() {
+      try {
+        const resp = await fetch('/api/console/saas/plans', { headers: headers() });
+        if (resp.status === 401) { handle401(); return; }
+        if (!resp.ok) return;
+        const data = await resp.json();
+        allPlans = data.plans ?? [];
+        renderPlans();
+        const el = document.querySelector('[data-last-updated]');
+        if (el) el.textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+      } catch (e) {
+        document.getElementById('load-err').innerHTML = '<div class="flash flash-err">Gagal memuat plans: ' + e.message + '</div>';
+      }
+    }
+
+    function renderPlans() {
+      const wrap = document.getElementById('plans-wrap');
+      if (!allPlans.length) {
+        wrap.innerHTML = '<tr><td colspan="9" class="muted">Belum ada plan.</td></tr>';
+        return;
+      }
+      wrap.innerHTML = allPlans.map(function (p) {
+        return '<tr data-code="' + p.code + '" data-period="' + p.period + '">' +
+          '<td><b>' + p.name + '</b><div class="muted" style="font-size:12px">' + p.code + '</div></td>' +
+          '<td>' + p.period + '</td>' +
+          '<td><input class="input mono" type="number" min="0" step="1" value="' + p.priceIdr + '" data-f="priceIdr" style="width:130px" /></td>' +
+          '<td><input class="input mono" type="number" min="0" step="1" value="' + (p.slotLimit ?? 0) + '" data-f="slotLimit" style="width:90px" title="0 = tanpa batas" /></td>' +
+          '<td><input class="input mono" type="number" min="0" step="1" value="' + (p.tokenQuota ?? '') + '" data-f="tokenQuota" style="width:130px" placeholder="unlimited" /></td>' +
+          '<td><input class="input mono" type="number" min="0" step="1" value="' + (p.rpmLimit ?? '') + '" data-f="rpmLimit" style="width:90px" /></td>' +
+          '<td>' + (p.active ? '<span class="badge badge-ok">active</span>' : '<span class="badge badge-err">off</span>') + '</td>' +
+          '<td><span class="mono">' + (p.sold ?? 0).toLocaleString('id-ID') + '</span>' + (p.slotLimit ? ' / ' + Number(p.slotLimit).toLocaleString('id-ID') : '') + '</td>' +
+          '<td>' +
+            '<button class="btn btn-primary btn-sm" data-save>Simpan</button>' +
+            '<button class="btn ' + (p.active ? 'btn-danger' : 'btn-ghost') + ' btn-sm" data-toggle style="margin-left:4px;">' + (p.active ? 'Nonaktifkan' : 'Aktifkan') + '</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('');
+
+      wrap.querySelectorAll('[data-save]').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+          const row = btn.closest('tr');
+          const code = row.dataset.code, period = row.dataset.period;
+          const payload = {};
+          row.querySelectorAll('[data-f]').forEach(function (input) {
+            const f = input.dataset.f;
+            const raw = input.value.trim();
+            if (f === 'tokenQuota' && raw === '') { payload.tokenQuotaClear = true; return; }
+            if (raw === '') return;
+            const n = Number(raw);
+            if (Number.isFinite(n)) payload[f] = n;
+          });
+          btn.setAttribute('disabled', 'true');
+          try {
+            const resp = await fetch('/api/console/saas/plans/' + encodeURIComponent(code) + '/' + encodeURIComponent(period), {
+              method: 'PATCH', headers: headers(), body: JSON.stringify(payload),
+            });
+            if (resp.status === 401) { handle401(); return; }
+            if (!resp.ok) {
+              const err = await resp.json().catch(function () { return {}; });
+              alert('Gagal menyimpan: ' + ((err.error && err.error.message) ?? resp.status));
+              btn.removeAttribute('disabled');
+              return;
+            }
+            await loadPlans();
+          } catch (e) {
+            alert('Gagal menyimpan: ' + e.message);
+            btn.removeAttribute('disabled');
+          }
+        });
+      });
+
+      // Toggle active/inactive without touching the numeric fields.
+      wrap.querySelectorAll('[data-toggle]').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+          const row = btn.closest('tr');
+          const code = row.dataset.code, period = row.dataset.period;
+          const wasActive = btn.textContent.trim() === 'Nonaktifkan'; // button label says the current state's action
+          const msg = wasActive
+            ? 'Nonaktifkan plan ' + code + '/' + period + '? Plan akan hilang dari halaman pricing dan checkout baru ditolak (pelanggan aktif tetap berjalan hingga masa habis).'
+            : 'Aktifkan plan ' + code + '/' + period + '?';
+          if (!confirm(msg)) return;
+          btn.setAttribute('disabled', 'true');
+          try {
+            const resp = await fetch('/api/console/saas/plans/' + encodeURIComponent(code) + '/' + encodeURIComponent(period), {
+              method: 'PATCH', headers: headers(), body: JSON.stringify({ active: !wasActive }),
+            });
+            if (resp.status === 401) { handle401(); return; }
+            if (!resp.ok) {
+              const err = await resp.json().catch(function () { return {}; });
+              alert('Gagal: ' + ((err.error && err.error.message) ?? resp.status));
+              btn.removeAttribute('disabled');
+              return;
+            }
+            await loadPlans();
+          } catch (e) {
+            alert('Gagal: ' + e.message);
+            btn.removeAttribute('disabled');
+          }
+        });
+      });
+    }
+
+    showContent();
+  </script>
+</AppShell>

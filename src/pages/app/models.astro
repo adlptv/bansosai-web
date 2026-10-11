@@ -1,0 +1,310 @@
+---
+// /app/models — Model Studio: the catalog grouped per brand, with today's
+// success rate per model. Ported from the pre-rebuild compiled page.
+//
+// Catalog and per-plan allow-list come from the gateway; the health strip comes
+// from /saas/api/models/insights. Brand grouping mirrors the pre-rebuild
+// `model-family` helper (prefix/name matching, vendor override first).
+import AppShell from '../../layouts/AppShell.astro';
+import Flash from '../../components/Flash.astro';
+import { getSessionUser, getToken } from '../../lib/api/session';
+import { apiGet } from '../../lib/api/saas';
+
+const user = await getSessionUser(Astro);
+if (!user) return Astro.redirect('/login');
+const token = getToken(Astro)!;
+
+interface CatalogModel {
+  prefix: string;
+  displayName: string;
+  tier: string;
+  vendor?: string;
+  vendorLogo?: string;
+}
+
+interface HealthRow {
+  requests: number;
+  errors: number;
+  successRate: number | null;
+}
+
+const INFERENCE_BASE = 'https://api.bansosai.app/v1';
+
+let models: CatalogModel[] = [];
+let planCode = '';
+let loadErr = '';
+try {
+  const [allModelsData, myModelsData] = await Promise.all([
+    apiGet<{ models?: CatalogModel[] }>('/saas/api/models', token, Astro.request),
+    apiGet<{ models?: string[]; plan?: string }>('/saas/api/my-models', token, Astro.request),
+  ]);
+  const allModels = allModelsData.models ?? [];
+  const myModelIDs = myModelsData.models ?? [];
+  planCode = myModelsData.plan ?? '';
+  if (myModelIDs.length > 0) {
+    const allowed = new Set<string>();
+    for (const id of myModelIDs) {
+      allowed.add(id);
+      allowed.add(id.split('/')[0] ?? id);
+    }
+    models = allModels.filter((m) => allowed.has(m.prefix));
+  } else {
+    models = allModels;
+  }
+} catch (e) {
+  loadErr = e instanceof Error ? e.message : 'Gagal memuat model';
+}
+
+let health: Record<string, HealthRow> = {};
+try {
+  const insights = await apiGet<{ models?: { model?: string; requests?: number; errors?: number; successRate?: number }[] }>(
+    '/saas/api/models/insights',
+    token,
+    Astro.request,
+  );
+  for (const row of insights.models ?? []) {
+    if (!row.model) continue;
+    health[row.model] = {
+      requests: row.requests ?? 0,
+      errors: row.errors ?? 0,
+      successRate: typeof row.successRate === 'number' ? row.successRate : null,
+    };
+  }
+} catch {
+  health = {};
+}
+const healthOf = (id: string): HealthRow | null => health[id] ?? null;
+const rateClass = (rate: number) => (rate >= 99 ? 'rate-ok' : rate >= 90 ? 'rate-warn' : 'rate-bad');
+
+// ── Brand grouping (mirrors the pre-rebuild model-family helper) ─────────────
+const FALLBACK_LOGO = '/logos/ai.svg';
+const BRAND_RULES: [RegExp, string, string, string][] = [
+  [/autoclaw/i, 'glm', 'GLM (Zhipu)', '/logos/glm.svg'],
+  [/claude/i, 'claude', 'Claude', '/logos/claude.svg'],
+  [/deepseek/i, 'deepseek', 'DeepSeek', '/logos/deepseek.svg'],
+  [/^gpt|gpt-/i, 'openai', 'OpenAI', '/logos/openai.svg'],
+  [/glm/i, 'glm', 'GLM (Zhipu)', '/logos/glm.svg'],
+  [/qwen|qmodel|qwen3/i, 'qwen', 'Qwen (Alibaba)', '/logos/qwen.svg'],
+  [/kimi/i, 'kimi', 'Kimi (Moonshot)', '/logos/kimi.svg'],
+  [/grok/i, 'grok', 'Grok (xAI)', '/logos/grok.svg'],
+  [/gemini|gemma|diffusiongemma/i, 'google', 'Google', '/logos/google.svg'],
+  [/mistral|codestral|devstral|ministral|voxtral/i, 'mistral', 'Mistral', '/logos/mistral.svg'],
+  [/minimax/i, 'minimax', 'MiniMax', '/logos/minimax.svg'],
+  [/llama/i, 'meta', 'Meta (Llama)', '/logos/meta.svg'],
+  [/nemotron|riva/i, 'nvidia', 'NVIDIA', '/logos/nvidia.svg'],
+  [/mimo/i, 'xiaomi', 'Xiaomi (MiMo)', '/logos/xiaomi.svg'],
+  [/^qoder/i, 'qoder', 'Qoder', '/logos/qoder.svg'],
+  [/muse/i, 'muse', 'Muse', '/logos/muse.svg'],
+  [/ling/i, 'ling', 'Ling', '/logos/ling.svg'],
+];
+const LABEL_OVERRIDES: Record<string, string> = { 'fork-auto': 'Auto', freecode: 'Free' };
+const displayLabel = (m: CatalogModel) => LABEL_OVERRIDES[m.prefix] ?? (m.displayName || m.prefix);
+const vendorKey = (label: string) => label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+function brandOf(m: CatalogModel): { key: string; label: string; logoUrl: string } {
+  if (m.vendor) return { key: vendorKey(m.vendor), label: m.vendor, logoUrl: m.vendorLogo || FALLBACK_LOGO };
+  const haystack = `${m.displayName} ${m.prefix}`;
+  for (const [re, key, label, logo] of BRAND_RULES) {
+    if (re.test(haystack)) return { key, label, logoUrl: logo };
+  }
+  return { key: 'lainnya', label: 'Lainnya', logoUrl: FALLBACK_LOGO };
+}
+
+interface Family {
+  key: string;
+  label: string;
+  logoUrl: string;
+  models: CatalogModel[];
+}
+
+const familyMap = new Map<string, Family>();
+for (const m of models) {
+  const b = brandOf(m);
+  let fam = familyMap.get(b.key);
+  if (!fam) {
+    fam = { key: b.key, label: b.label, logoUrl: b.logoUrl, models: [] };
+    familyMap.set(b.key, fam);
+  }
+  fam.models.push(m);
+}
+const families: Family[] = [...familyMap.values()]
+  .sort((a, b) => a.label.localeCompare(b.label))
+  .map((f) => ({ ...f, models: f.models.sort((a, b) => a.displayName.localeCompare(b.displayName)) }));
+
+const stats = { total: 0, free: 0, premium: 0 };
+for (const f of families) {
+  for (const m of f.models) {
+    stats.total++;
+    if (m.tier === 'free') stats.free++;
+    else if (m.tier === 'premium') stats.premium++;
+  }
+}
+
+const codeExample = `curl ${INFERENCE_BASE}/chat/completions \\\n  -H "Authorization: Bearer ***" \\\n  -d '{"model": "gk/grok-3", "messages": [...]}'`;
+---
+
+<AppShell title="Model Studio" user={user}>
+  <section class="section">
+    <div class="container">
+      {loadErr && <Flash kind="err" message={loadErr} />}
+
+      <div class="page-header">
+        <h1>Model Studio{planCode ? ` — Paket ${planCode.toUpperCase()}` : ''}</h1>
+        <p>Model dikelompokkan per brand. Label Free berarti bisa dipakai sesuai paket; Premium butuh balance.</p>
+      </div>
+
+      {families.length > 0 ? (
+        <>
+          <div class="studio-summary">
+            <div class="stat-card card"><span class="stat-label">Total Model</span><div class="stat-value">{stats.total}</div></div>
+            <div class="stat-card card"><span class="stat-label">Model Free</span><div class="stat-value" style="color:var(--sb-primary)">{stats.free}</div></div>
+            <div class="stat-card card"><span class="stat-label">Model Premium</span><div class="stat-value" style="color:var(--sb-accent-purple)">{stats.premium}</div></div>
+          </div>
+
+          <div class="studio-families">
+            {families.map((fam) => (
+              <section class="studio-family card">
+                <div class="studio-family-head">
+                  <img src={fam.logoUrl} alt="" class="family-logo" loading="lazy" />
+                  <div>
+                    <h2>{fam.label}</h2>
+                    <span class="mono muted">{fam.models.length} model · {fam.models.filter((m) => m.tier === 'free').length} free</span>
+                  </div>
+                </div>
+                <div class="studio-model-list">
+                  {fam.models.map((m) => (
+                    <div class="studio-model">
+                      <div class="studio-model-info">
+                        <span class="studio-model-name">{displayLabel(m)}</span>
+                        <span class="mono studio-model-id">{m.prefix}</span>
+                      </div>
+                      <div class="studio-model-meta">
+                        {(() => {
+                          const h = healthOf(m.prefix);
+                          if (!h || h.successRate === null) {
+                            return <span class="mono muted" title="Belum ada permintaan hari ini">—</span>;
+                          }
+                          return (
+                            <span
+                              class={`health-cell ${rateClass(h.successRate)}`}
+                              title={`${h.requests.toLocaleString('id-ID')} permintaan, ${h.errors.toLocaleString('id-ID')} gagal`}
+                            >
+                              <span class="health-dot" aria-hidden="true"></span>
+                              <span class="mono">{h.successRate.toFixed(1)}%</span>
+                              <span class="muted health-reqs">{h.requests.toLocaleString('id-ID')} req</span>
+                            </span>
+                          );
+                        })()}
+                        {m.tier === 'premium' ? (
+                          <span class="badge badge-premium">Premium</span>
+                        ) : m.tier === 'free' ? (
+                          <span class="badge badge-free">Free</span>
+                        ) : (
+                          <span class="badge badge-accent">Model</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </>
+      ) : !loadErr ? (
+        <div class="empty-state"><div class="icon">∅</div><p>Belum ada model tersedia.</p></div>
+      ) : null}
+
+      <div class="card" style="margin-top:24px">
+        <h3 style="margin-bottom:10px">Cara Pakai</h3>
+        <pre
+          class="mono"
+          style="background:var(--sb-canvas);border:1px solid var(--sb-hairline);border-radius:var(--sb-r-sm);padding:16px;overflow-x:auto;font-size:13px;color:var(--sb-ink-mute);white-space:pre"
+        >{codeExample}</pre>
+        <p class="muted" style="font-size:13px;margin-top:8px">Base URL: <span class="mono">{INFERENCE_BASE}</span></p>
+      </div>
+    </div>
+  </section>
+</AppShell>
+
+<style is:global>
+  .card {
+    padding: var(--sb-lg);
+    background: var(--sb-canvas-raised);
+    border: 1px solid var(--sb-hairline);
+    border-radius: var(--sb-r-lg);
+    box-shadow: var(--sb-elev-1);
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sb-xs);
+    padding: 2px var(--sb-sm);
+    border: 1px solid var(--sb-hairline-strong);
+    border-radius: var(--sb-r-full);
+    background: var(--sb-canvas-raised);
+    color: var(--sb-ink);
+    font-size: var(--sb-micro);
+    font-weight: 500;
+  }
+  .badge-accent { border-color: var(--sb-primary); color: var(--sb-primary); }
+  .badge-free { border-color: var(--sb-status-success); color: var(--sb-status-success); }
+  .badge-premium { background: var(--sb-ink); border-color: var(--sb-ink); color: var(--sb-canvas); }
+
+  .studio-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 22px; }
+  .studio-families { display: flex; flex-direction: column; gap: 16px; }
+  .studio-family { padding: 20px; }
+  .studio-family-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .studio-family-head h2 { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
+  .family-logo {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    object-fit: contain;
+    background: var(--sb-canvas-night);
+    border: 1px solid var(--sb-hairline);
+    padding: 4px;
+  }
+  .studio-model-list { display: flex; flex-direction: column; }
+  .studio-model {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 4px;
+    border-bottom: 1px solid var(--sb-hairline);
+  }
+  .studio-model:last-child { border-bottom: none; }
+  .studio-model-info { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .studio-model-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--sb-ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .studio-model-id {
+    font-size: 12px;
+    color: var(--sb-ink-mute);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
+  }
+  .studio-model-meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .health-cell { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+  .health-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sb-ink-faint); }
+  .rate-ok .health-dot { background: var(--sb-status-success); }
+  .rate-warn .health-dot { background: var(--sb-status-warning); }
+  .rate-bad .health-dot { background: var(--sb-status-danger); }
+  .rate-ok { color: var(--sb-status-success); }
+  .rate-warn { color: var(--sb-status-warning); }
+  .rate-bad { color: var(--sb-status-danger); }
+  .health-reqs { color: var(--sb-ink-mute); }
+  .empty-state { text-align: center; padding: 48px 20px; color: var(--sb-ink-secondary); }
+  .empty-state .icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
+  @media (max-width: 640px) {
+    .studio-model { align-items: flex-start; flex-direction: column; gap: 4px; }
+    .studio-model-id { max-width: 100%; }
+  }
+</style>

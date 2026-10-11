@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Kiro">
+  <rect width="64" height="64" rx="14" fill="#1a73e8"/>
+  <path d="M20 32c0-6.6 5.4-12 12-12s12 5.4 12 12-5.4 12-12 12-12-5.4-12-12zm19 0c0-3.9-3.1-7-7-7s-7 3.1-7 7 3.1 7 7 7 7-3.1 7-7z" fill="#fff"/>
+  <path d="M32 12v5M32 47v5M12 32h5M47 32h5" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+</svg>
