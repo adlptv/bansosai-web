@@ -1,0 +1,205 @@
+---
+// HeroDots — latar hero interaktif: titik-titik yang saling terhubung garis dan
+// bereaksi ke kursor (garis emerald + titik yang menyala di dekat kursor).
+//
+// Murni HTML/CSS/JS (canvas 2D), tanpa dependensi. Menghormati
+// prefers-reduced-motion (menggambar satu frame statis), berhenti saat hero di
+// luar viewport, dan menyesuaikan jumlah titik dengan ukuran area.
+interface Props {
+  class?: string;
+}
+const { class: className } = Astro.props;
+---
+
+<canvas class={`hero-dots ${className ?? ''}`.trim()} data-hero-dots aria-hidden="true"></canvas>
+
+<script>
+  // Idempoten: aman dipanggil ulang setelah view transition.
+  function initHeroDots() {
+    document.querySelectorAll<HTMLCanvasElement>('[data-hero-dots]').forEach((canvas) => {
+      if (canvas.dataset.ready === '1') return;
+      canvas.dataset.ready = '1';
+
+      const ctx = canvas.getContext('2d');
+      const host = canvas.parentElement;
+      if (!ctx || !host) return;
+
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+      const LINK = 132; // jarak antar-titik yang masih digambar
+      const MOUSE_LINK = 200; // jari-jari pengaruh kursor
+      const PULL = 0.0016; // tarikan lembut titik ke arah kursor
+
+      let W = 0;
+      let H = 0;
+      let raf = 0;
+      let running = false;
+      let particles: { x: number; y: number; vx: number; vy: number; r: number }[] = [];
+      const mouse = { x: -1e4, y: -1e4, active: false };
+
+      const seed = () => {
+        const count = Math.min(150, Math.max(28, Math.round((W * H) / 15000)));
+        particles = [];
+        for (let i = 0; i < count; i++) {
+          particles.push({
+            x: Math.random() * W,
+            y: Math.random() * H,
+            vx: (Math.random() - 0.5) * 0.28,
+            vy: (Math.random() - 0.5) * 0.28,
+            r: Math.random() * 1.3 + 0.6,
+          });
+        }
+      };
+
+      const resize = () => {
+        const rect = canvas.getBoundingClientRect();
+        W = rect.width;
+        H = rect.height;
+        canvas.width = Math.round(W * dpr);
+        canvas.height = Math.round(H * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        seed();
+        draw();
+      };
+
+      const draw = () => {
+        ctx.clearRect(0, 0, W, H);
+
+        if (!reduce) {
+          for (const p of particles) {
+            p.x += p.vx;
+            p.y += p.vy;
+            if (p.x < 0 || p.x > W) p.vx *= -1;
+            if (p.y < 0 || p.y > H) p.vy *= -1;
+            if (mouse.active) {
+              const dx = mouse.x - p.x;
+              const dy = mouse.y - p.y;
+              if (dx * dx + dy * dy < MOUSE_LINK * MOUSE_LINK) {
+                p.x += dx * PULL;
+                p.y += dy * PULL;
+              }
+            }
+          }
+        }
+
+        // Garis antar-titik yang berdekatan.
+        ctx.lineWidth = 1;
+        for (let i = 0; i < particles.length; i++) {
+          const a = particles[i]!;
+          for (let j = i + 1; j < particles.length; j++) {
+            const b = particles[j]!;
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist < LINK) {
+              ctx.strokeStyle = `rgba(255,255,255,${(1 - dist / LINK) * 0.14})`;
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+              ctx.stroke();
+            }
+          }
+        }
+
+        // Garis emerald dari kursor ke titik terdekat.
+        if (mouse.active) {
+          for (const p of particles) {
+            const dx = p.x - mouse.x;
+            const dy = p.y - mouse.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist < MOUSE_LINK) {
+              ctx.strokeStyle = `rgba(62,207,142,${(1 - dist / MOUSE_LINK) * 0.55})`;
+              ctx.beginPath();
+              ctx.moveTo(mouse.x, mouse.y);
+              ctx.lineTo(p.x, p.y);
+              ctx.stroke();
+            }
+          }
+        }
+
+        // Titik; yang dekat kursor menyala emerald.
+        for (const p of particles) {
+          let near = 0;
+          if (mouse.active) {
+            const dist = Math.hypot(p.x - mouse.x, p.y - mouse.y);
+            near = Math.max(0, 1 - dist / MOUSE_LINK);
+          }
+          ctx.fillStyle = near > 0.12 ? `rgba(62,207,142,${0.35 + near * 0.6})` : 'rgba(255,255,255,0.34)';
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r + near * 1.3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      };
+
+      const loop = () => {
+        if (!running) return;
+        draw();
+        raf = requestAnimationFrame(loop);
+      };
+      const start = () => {
+        if (running || reduce) return;
+        running = true;
+        loop();
+      };
+      const stop = () => {
+        running = false;
+        cancelAnimationFrame(raf);
+      };
+
+      const onMove = (e: PointerEvent) => {
+        const rect = canvas.getBoundingClientRect();
+        mouse.x = e.clientX - rect.left;
+        mouse.y = e.clientY - rect.top;
+        mouse.active = true;
+        if (reduce) draw();
+      };
+      const onLeave = () => {
+        mouse.active = false;
+        mouse.x = -1e4;
+        mouse.y = -1e4;
+        if (reduce) draw();
+      };
+
+      // Pelacakan kursor di seluruh area hero, bukan hanya di atas kanvas.
+      host.addEventListener('pointermove', onMove, { passive: true });
+      host.addEventListener('pointerleave', onLeave, { passive: true });
+      window.addEventListener('resize', resize, { passive: true });
+
+      // Hentikan animasi saat hero tidak terlihat (hemat CPU/baterai).
+      if ('IntersectionObserver' in window) {
+        const io = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (entry.isIntersecting) start();
+              else stop();
+            }
+          },
+          { threshold: 0 },
+        );
+        io.observe(canvas);
+      }
+
+      resize();
+      if (!reduce) start();
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initHeroDots, { once: true });
+  } else {
+    initHeroDots();
+  }
+</script>
+
+<style>
+  .hero-dots {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    pointer-events: none;
+    z-index: 0;
+  }
+</style>

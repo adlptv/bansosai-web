@@ -30,6 +30,11 @@ const ICONS: Record<string, string> = {
 };
 
 const inner = ICONS[name] ?? '';
+// The icon table stores SVG path *data* (the value of a `d` attribute). It must
+// be wrapped in a <path> element before it is injected: `set:html` writes raw
+// markup, so injecting a bare "M3 12l9-9…" string rendered it as text instead of
+// a shape, which left every nav icon blank.
+const markup = inner ? `<path d="${inner}"/>` : '';
 ---
 
 <svg
@@ -44,5 +49,5 @@ const inner = ICONS[name] ?? '';
   stroke-linejoin="round"
   aria-hidden="true"
   class={className}
-  set:html={inner}
+  set:html={markup}
 />

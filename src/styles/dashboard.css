@@ -38,8 +38,11 @@
   font-weight: 500;
   letter-spacing: -0.02em;
   color: var(--sb-ink);
+  white-space: nowrap;
 }
+.sidebar-brand-text { white-space: nowrap; }
 .sidebar-brand span { color: var(--sb-primary); }
+.sidebar-brand .brand-mark { flex-shrink: 0; }
 
 .sidebar-head {
   display: flex;
@@ -62,6 +65,36 @@
 }
 .sidebar-collapse:hover { color: var(--sb-ink); border-color: var(--sb-ink-mute); }
 .sidebar-collapse .icon-collapsed { display: none; }
+
+.sidebar-close {
+  display: none;
+  margin-left: auto;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--sb-hairline-strong);
+  border-radius: var(--sb-r-sm);
+  background: var(--sb-canvas-raised);
+  color: var(--sb-ink-mute);
+  cursor: pointer;
+}
+.sidebar-close:hover { color: var(--sb-ink); }
+
+/* Brand shown in the topbar on mobile, where the sidebar is off-canvas. */
+.topbar-brand {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--sb-heading-md);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--sb-ink);
+  white-space: nowrap;
+}
+.topbar-brand span { color: var(--sb-primary); }
+.topbar-brand img { flex-shrink: 0; }
 
 .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
 
@@ -137,7 +170,7 @@
   border-bottom: 1px solid var(--sb-hairline);
   background: var(--sb-canvas);
 }
-.app-topbar > div { min-width: 0; }
+.app-topbar .topbar-title { min-width: 0; }
 .app-topbar h1 { margin: 0; font-size: var(--sb-heading-lg); letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-topbar .topbar-sub { margin: 0; font-size: var(--sb-micro); color: var(--sb-ink-mute); }
 
@@ -262,6 +295,9 @@
   .app-shell[data-collapsed='true'] { grid-template-columns: 76px minmax(0, 1fr); }
   .app-shell[data-collapsed='true'] .sidebar { padding-left: var(--sb-sm); padding-right: var(--sb-sm); align-items: center; }
   .app-shell[data-collapsed='true'] .sidebar-head { justify-content: center; }
+  /* Keep the brand mark visible: the logo is the branding, so the rail shows the
+     mark alone instead of hiding the whole brand. */
+  .app-shell[data-collapsed='true'] .sidebar-brand { padding: var(--sb-sm) 0; justify-content: center; }
   .app-shell[data-collapsed='true'] .sidebar-brand-text { display: none; }
   .app-shell[data-collapsed='true'] .sidebar-collapse { margin-left: 0; }
   .app-shell[data-collapsed='true'] .icon-expanded { display: none; }
@@ -325,8 +361,14 @@
   }
   .sidebar[data-open='true'] { transform: translateX(0); }
   .sidebar-toggle { display: inline-flex; }
+  /* In the drawer the collapse toggle makes no sense (it is a mobile-only
+     drawer); a close button is clearer. */
+  .sidebar-collapse { display: none; }
+  .sidebar-close { display: inline-flex; }
   .sidebar-overlay { position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, 0.6); }
   .app-content, .app-topbar { padding-left: var(--sb-lg); padding-right: var(--sb-lg); }
+  /* The brand travels to the topbar because the sidebar is off-canvas. */
+  .topbar-brand { display: inline-flex; }
 }
 
 /* Narrow phones: the topbar cannot fit the title plus Katalog/Docs plus the
@@ -336,4 +378,6 @@
   .app-topbar-nav a { display: none; }
   .app-topbar { gap: var(--sb-sm); }
   .view-switch a { padding: 4px var(--sb-sm); }
+  /* Keep the branding mark, drop the wordmark so the title still fits. */
+  .topbar-brand span { display: none; }
 }

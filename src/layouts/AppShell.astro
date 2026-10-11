@@ -96,7 +96,7 @@ try {
       <aside class="sidebar" data-sidebar>
         <div class="sidebar-head">
           <a class="sidebar-brand" href="/">
-            <img class="brand-mark" src="/bansosai-mark.png" alt="" width="28" height="28" />
+            <img class="brand-mark" src="/bansosai-mark.svg" alt="" width="28" height="28" />
             <span class="sidebar-brand-text">bansos<span>AI</span></span>
           </a>
           <button
@@ -108,6 +108,14 @@ try {
           >
             <span class="icon-expanded"><DashIcon name="panel-left-close" size={18} /></span>
             <span class="icon-collapsed"><DashIcon name="panel-left-open" size={18} /></span>
+          </button>
+          <button
+            class="sidebar-close"
+            type="button"
+            aria-label="Tutup menu"
+            data-sidebar-close
+          >
+            <DashIcon name="x" size={20} />
           </button>
         </div>
         <nav class="sidebar-nav">
@@ -143,7 +151,11 @@ try {
           <button class="sidebar-toggle" type="button" aria-label="Buka menu" data-sidebar-toggle>
             <DashIcon name="menu" size={20} />
           </button>
-          <div>
+          <a class="topbar-brand" href="/">
+            <img src="/bansosai-mark.svg" alt="" width="24" height="24" />
+            <span>bansos<span>AI</span></span>
+          </a>
+          <div class="topbar-title">
             <h1>{title}</h1>
             {subtitle && <p class="topbar-sub">{subtitle}</p>}
           </div>
@@ -216,6 +228,7 @@ try {
       };
       toggle?.addEventListener('click', () => setOpen(sidebar?.getAttribute('data-open') !== 'true'));
       overlay?.addEventListener('click', () => setOpen(false));
+      document.querySelector('[data-sidebar-close]')?.addEventListener('click', () => setOpen(false));
     </script>
   </body>
 </html>

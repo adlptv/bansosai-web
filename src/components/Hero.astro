@@ -1,12 +1,16 @@
 ---
 import Button from './Button.astro';
 import Typewriter from './Typewriter.astro';
+import HeroDots from './HeroDots.astro';
 
-const phrases = ['Claude', 'GPT', 'Gemini', 'DeepSeek', 'Qwen', 'Grok'];
+// Nama pembuat model (vendor), bukan id model — mis. "Claude" bukan
+// "claude-sonnet-4". Diganti bergantian oleh animasi typewriter.
+const phrases = ['Claude', 'DeepSeek', 'GLM', 'Gemini', 'Qwen', 'Kimi', 'Grok', 'Mistral', 'Llama'];
 ---
 
 <section class="hero">
-  <div class="container">
+  <HeroDots />
+  <div class="container hero-inner">
     <h1>Semua model AI.<br /><span class="accent">Satu API.</span></h1>
     <p class="hero-sub">
       Satu API key untuk akses model frontier dengan routing otomatis dan harga transparan.
