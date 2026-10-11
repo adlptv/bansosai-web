@@ -2,7 +2,6 @@
 import Base from '../layouts/Base.astro';
 import Icon from '../components/Icon.astro';
 import { consumeHandoff, sessionCookie, redirectWith } from '../lib/api/auth';
-import { consoleSessionCookie } from '../lib/api/admin';
 
 // Only site-relative destinations are honoured, so a crafted `next` cannot turn
 // the login into an open redirect.
@@ -21,20 +20,15 @@ const nextPath = params.get('next') ?? '';
 
 // Consume a successful OAuth handoff server-side: exchange the one-time token
 // for a session, set the httpOnly cookie for THIS origin, and redirect to the
-// right place. An admin also gets a console session so they land on /console/.
+// right place: an admin to /admin, everyone else to /app.
 // The token never lingers in the browser URL.
 if (oauthStatus === 'success' && handoff) {
   const result = await consumeHandoff(handoff);
   if (result.ok && result.sessionToken) {
     const secure = Astro.url.protocol === 'https:';
     const isAdmin = result.role === 'admin';
-    const cookies = [sessionCookie(result.sessionToken, secure)];
-    if (isAdmin) {
-      const consoleCookie = await consoleSessionCookie(Astro, result.sessionToken);
-      if (consoleCookie) cookies.push(consoleCookie);
-    }
-    const dest = safeNextPath(params.get('next')) ?? (isAdmin ? '/console/' : '/app');
-    return redirectWith(dest, cookies);
+    const dest = safeNextPath(params.get('next')) ?? (isAdmin ? '/admin' : '/app');
+    return redirectWith(dest, [sessionCookie(result.sessionToken, secure)]);
   }
   return redirectWith('/login?error=' + encodeURIComponent('Sesi OAuth tidak valid. Coba lagi.'));
 }

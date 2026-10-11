@@ -1,12 +1,11 @@
 // POST /api/login — session login (form post), parity route.
 //
-// On success the session cookie is set. An admin also gets a console session
-// (cartethyia_console) so they land on the console by default; a `next` field
-// lets any user choose their destination (e.g. "Lihat sebagai user").
+// On success the session cookie is set and the user is sent to the right place:
+// an admin to the admin dashboard (/admin), everyone else to /app. A `next`
+// field lets any user choose their destination.
 import type { APIRoute } from 'astro';
 import { apiPost } from '../../lib/api/saas';
 import { setSession } from '../../lib/api/session';
-import { grantConsoleSession } from '../../lib/api/admin';
 import { isSameOrigin } from '../../lib/api/auth';
 
 export const prerender = false;
@@ -39,14 +38,9 @@ export const POST: APIRoute = async (ctx) => {
     setSession(ctx, data.token);
 
     const isAdmin = data.user?.role === 'admin';
-    if (isAdmin) {
-      // Give the console SPA a valid session too, so /console/ opens directly.
-      await grantConsoleSession(ctx, data.token);
-    }
-
     const next = safeNext(String(form.get('next') ?? '') || null);
     if (next) return ctx.redirect(next, 303);
-    return ctx.redirect(isAdmin ? '/console/' : '/app', 303);
+    return ctx.redirect(isAdmin ? '/admin' : '/app', 303);
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Login gagal.';
     return ctx.redirect(`/login?err=${encodeURIComponent(message)}`, 303);

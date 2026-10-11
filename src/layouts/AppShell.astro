@@ -118,10 +118,10 @@ const isAdminUser = sessionUser?.role === 'admin';
             {isAdminUser && (
               <span class="view-switch" data-view-switch>
                 <a
-                  href="/console/"
+                  href="/admin"
                   class={isAdmin ? 'active' : ''}
-                  title="Buka console operator"
-                >Console</a>
+                  title="Buka dashboard admin"
+                >Admin</a>
                 <a
                   href="/app"
                   class={isAdmin ? '' : 'active'}
