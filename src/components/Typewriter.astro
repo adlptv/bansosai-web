@@ -39,8 +39,18 @@ const first = phrases[0] ?? '';
       }
       if (!Array.isArray(phrases) || phrases.length < 2) return;
 
-      // Reduced motion (atau preferensi mati): biarkan frasa pertama statis.
-      if (reduce) return;
+      // Reduced motion: hormati preferensi, tetapi jangan biarkan teks kosong —
+      // SSR sudah mengisi frasa pertama, jadi cukup keluar tanpa menyentuhnya.
+      if (reduce) {
+        if (!text.textContent) text.textContent = phrases[0] ?? '';
+        return;
+      }
+
+      // Batalkan timer dari run sebelumnya: skrip ini bisa dieksekusi ulang saat
+      // halaman dipulihkan dari bfcache, dan dua loop yang berjalan bersamaan
+      // saling menghapus tulisan sehingga animasi tampak diam.
+      const prev = Number(el.dataset.typewriterTimer || '0');
+      if (prev) window.clearTimeout(prev);
 
       const TYPE_MS = 70;
       const DELETE_MS = 35;
@@ -61,27 +71,38 @@ const first = phrases[0] ?? '';
           text.textContent = current.slice(0, charIdx);
           if (charIdx >= current.length) {
             deleting = true;
-            window.setTimeout(tick, HOLD_MS);
+            el.dataset.typewriterTimer = String(window.setTimeout(tick, HOLD_MS));
             return;
           }
-          window.setTimeout(tick, TYPE_MS);
+          el.dataset.typewriterTimer = String(window.setTimeout(tick, TYPE_MS));
         } else {
           charIdx -= 1;
           text.textContent = current.slice(0, Math.max(0, charIdx));
           if (charIdx <= 0) {
             deleting = false;
             phraseIdx = (phraseIdx + 1) % phrases.length;
-            window.setTimeout(tick, GAP_MS);
+            el.dataset.typewriterTimer = String(window.setTimeout(tick, GAP_MS));
             return;
           }
-          window.setTimeout(tick, DELETE_MS);
+          el.dataset.typewriterTimer = String(window.setTimeout(tick, DELETE_MS));
         }
       };
 
       // Delay kecil agar halaman selesai paint sebelum mengetik.
-      window.setTimeout(tick, 400);
+      el.dataset.typewriterTimer = String(window.setTimeout(tick, 400));
     });
   }
+
+  // Jangan tandai "ready" permanen saat halaman dipulihkan dari bfcache: timer
+  // yang lama sudah dibatalkan oleh browser, jadi animasi harus dijalankan lagi.
+  window.addEventListener('pageshow', (e) => {
+    if ((e as PageTransitionEvent).persisted) {
+      document.querySelectorAll<HTMLElement>('[data-typewriter]').forEach((el) => {
+        delete el.dataset.typewriterReady;
+      });
+    }
+    initTypewriters();
+  });
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initTypewriters, { once: true });

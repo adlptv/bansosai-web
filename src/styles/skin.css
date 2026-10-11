@@ -214,7 +214,7 @@ img { max-width: 100%; height: auto; }
   color: var(--sb-ink);
 }
 .nav-logo span { color: var(--sb-primary); }
-.brand-mark { display: block; border-radius: var(--sb-r-sm); }
+.brand-mark { display: block; }
 
 .nav-links {
   display: flex;
