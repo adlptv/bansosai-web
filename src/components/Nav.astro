@@ -28,7 +28,13 @@ try {
     const token = getToken(Astro);
     if (token) {
       const dash = await apiGet<DashboardResponse>('/saas/api/dashboard', token, Astro.request);
-      planName = dash?.plan?.name ?? (user.isSupporter ? 'Supporter' : 'Free');
+      const planCode = dash?.plan?.code ?? 'free';
+      // A supporter on the free plan reads as "Supporter": that is the role the
+      // operator granted and what gives them the 50M/day free ceiling.
+      planName =
+        user.isSupporter && planCode === 'free'
+          ? 'Supporter'
+          : (dash?.plan?.name ?? (user.isSupporter ? 'Supporter' : 'Free'));
       if (dash?.subscription?.expiresAtWib) subUntil = formatWib(dash.subscription.expiresAtWib);
     }
   }
