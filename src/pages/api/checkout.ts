@@ -83,11 +83,13 @@ export const POST: APIRoute = async (ctx) => {
   }
 
   try {
-    // Plan catalog is public upstream: an empty token means no Authorization
-    // header is attached (mirrors the pre-rebuild `apiGet(path, undefined, …)`).
+    // The catalogue is viewer-scoped: supporter-only plans (e.g. Supporter
+    // Weekly) are filtered out for anonymous callers, so the token must be
+    // forwarded or a supporter's checkout would fail price validation with
+    // "Jumlah harus minimal sesuai harga plan yang dipilih."
     const planData = await apiGet<{ plans?: { code?: string; period?: string; priceIdr?: number }[] }>(
       '/saas/api/plans',
-      '',
+      token,
       ctx.request,
     );
     const plan = (planData.plans ?? []).find((candidate) => candidate.code === planCode && candidate.period === period);

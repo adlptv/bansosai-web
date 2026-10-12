@@ -39,9 +39,12 @@ let payments: PaymentRow[] = [];
 let balance: number | null = null;
 
 try {
+  // Kirim token sesi: katalog menyertakan plan yang hanya terlihat oleh
+  // supporter (mis. Supporter Weekly). Token kosong = viewer anonim, sehingga
+  // plan itu tersaring dan supporter tidak pernah melihat harganya.
   const data = await apiGet<{ plans?: PlanRow[]; slots?: Record<string, SlotRow> }>(
     '/saas/api/plans',
-    '',
+    token,
     Astro.request,
   );
   plans = (data.plans ?? []).filter((p) => p.priceIdr > 0);

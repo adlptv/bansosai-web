@@ -57,7 +57,13 @@ const isActive = (href: string) => (href === '/app' || href === '/admin' ? path 
 
 const email = sessionUser?.email ?? 'Akun bansosAI';
 const avatar = (sessionUser?.email || 'B').trim().charAt(0).toUpperCase();
-const roleLabel = sessionUser ? (sessionUser.role === 'admin' ? 'Admin' : 'Member bansosAI') : 'AI aggregator';
+const roleLabel = sessionUser
+  ? sessionUser.role === 'admin'
+    ? 'Admin'
+    : sessionUser.isSupporter
+      ? 'Supporter'
+      : 'Member bansosAI'
+  : 'AI aggregator';
 // Admins can move between the operator console and the ordinary user view.
 const isAdminUser = sessionUser?.role === 'admin';
 
