@@ -35,6 +35,7 @@ const user = await getSessionUser(Astro);
             <th>Slot Limit</th>
             <th>Kuota Token</th>
             <th>RPM</th>
+            <th>Tampil untuk</th>
             <th>Status</th>
             <th>Terjual</th>
             <th>Aksi</th>
@@ -158,6 +159,10 @@ const user = await getSessionUser(Astro);
           '<td><input class="input mono" type="number" min="0" step="1" value="' + (p.slotLimit ?? 0) + '" data-f="slotLimit" style="width:90px" title="0 = tanpa batas" /></td>' +
           '<td><input class="input mono" type="number" min="0" step="1" value="' + (p.tokenQuota ?? '') + '" data-f="tokenQuota" style="width:130px" placeholder="unlimited" /></td>' +
           '<td><input class="input mono" type="number" min="0" step="1" value="' + (p.rpmLimit ?? '') + '" data-f="rpmLimit" style="width:90px" /></td>' +
+          '<td><select class="input" data-f="visibleTo" style="width:150px">' +
+            '<option value="all"' + ((p.visibleTo ?? 'all') === 'all' ? ' selected' : '') + '>Semua</option>' +
+            '<option value="supporter"' + (p.visibleTo === 'supporter' ? ' selected' : '') + '>Supporter saja</option>' +
+          '</select></td>' +
           '<td>' + (p.active ? '<span class="badge badge-ok">active</span>' : '<span class="badge badge-err">off</span>') + '</td>' +
           '<td><span class="mono">' + (p.sold ?? 0).toLocaleString('id-ID') + '</span>' + (p.slotLimit ? ' / ' + Number(p.slotLimit).toLocaleString('id-ID') : '') + '</td>' +
           '<td>' +
@@ -175,6 +180,7 @@ const user = await getSessionUser(Astro);
           row.querySelectorAll('[data-f]').forEach(function (input) {
             const f = input.dataset.f;
             const raw = input.value.trim();
+            if (f === 'visibleTo') { payload.visibleTo = raw; return; }
             if (f === 'tokenQuota' && raw === '') { payload.tokenQuotaClear = true; return; }
             if (raw === '') return;
             const n = Number(raw);

@@ -7,9 +7,10 @@ interface Props {
 }
 const { items } = Astro.props;
 
-// Slideshow pengumuman dari API announcements. Dismiss bersifat klien-lokal
-// per id (kontrak redaksi backend: endpoint tidak pernah menyimpan status
-// dismiss), jadi id di sini dipakai sebagai kunci localStorage.
+// Banner pengumuman tampil sebagai POPUP (modal di tengah layar dengan backdrop),
+// bukan section yang mendorong konten halaman. Dismiss bersifat klien-lokal per
+// id (endpoint tidak pernah menyimpan status dismiss), jadi id dipakai sebagai
+// kunci localStorage.
 const levelIcon: Record<string, string> = {
   info: 'info',
   success: 'check-circle',
@@ -17,6 +18,8 @@ const levelIcon: Record<string, string> = {
   danger: 'alert-circle',
 };
 
+// Ambil satu pengumuman prioritas tertinggi (urutan sudah dari server) sebagai
+// popup utama; sisanya tetap tersedia bila yang pertama sudah ditutup.
 const visible = items.slice(0, 6);
 
 // Poster bisa berupa gambar atau video pendek. Ekstensi menentukan elemen mana
@@ -26,16 +29,23 @@ const isVideoPoster = (name?: string) => !!name && /\.(mp4|webm)$/i.test(name);
 ---
 
 {visible.length > 0 && (
-  <div class="banner" data-banner-root>
+  <div class="banner-popup" data-banner-root hidden>
+    <div class="banner-backdrop" data-banner-backdrop></div>
     {visible.map((a, i) => (
       <div
-        class="banner-item"
+        class="banner-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={a.title}
         data-banner-item
         data-banner-id={a.id}
         data-dismissible={String(a.dismissible)}
         data-level={a.level}
         hidden={i !== 0}
       >
+        <button class="banner-close" type="button" aria-label="Tutup pengumuman" data-banner-close>
+          <Icon name="x" size={18} />
+        </button>
         {a.posterImage && (
           <div class="banner-poster">
             {(() => {
@@ -53,21 +63,16 @@ const isVideoPoster = (name?: string) => !!name && /\.(mp4|webm)$/i.test(name);
             })()}
           </div>
         )}
-        <div class="banner-inner">
-          <Icon name={levelIcon[a.level] ?? 'info'} class="banner-icon" size={20} />
-          <div class="banner-content">
+        <div class="banner-content">
+          <div class="banner-head">
+            <Icon name={levelIcon[a.level] ?? 'info'} class="banner-icon" size={20} />
             <div class="banner-title">{a.title}</div>
-            {a.body && <p class="banner-body">{a.body}</p>}
           </div>
+          {a.body && <p class="banner-body">{a.body}</p>}
           {a.posterLink && (
-            <a class="banner-link" href={a.posterLink} target="_blank" rel="noopener noreferrer">
+            <a class="banner-cta" href={a.posterLink} target="_blank" rel="noopener noreferrer">
               Selengkapnya
             </a>
-          )}
-          {a.dismissible && (
-            <button class="banner-close" type="button" aria-label="Tutup pengumuman" data-banner-close>
-              <Icon name="x" size={16} />
-            </button>
           )}
         </div>
       </div>
@@ -75,9 +80,87 @@ const isVideoPoster = (name?: string) => !!name && /\.(mp4|webm)$/i.test(name);
   </div>
 )}
 
+<style>
+  .banner-popup {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: grid;
+    place-items: center;
+    padding: var(--sb-lg);
+  }
+  .banner-popup[hidden] { display: none; }
+  .banner-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.62);
+    backdrop-filter: blur(2px);
+  }
+  .banner-dialog {
+    position: relative;
+    z-index: 1;
+    width: min(560px, 100%);
+    max-height: calc(100vh - 2 * var(--sb-lg));
+    overflow-y: auto;
+    border: 1px solid var(--sb-hairline-strong);
+    border-top: 3px solid var(--banner-accent, var(--sb-primary));
+    border-radius: var(--sb-r-lg);
+    background: var(--sb-canvas-raised);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+    animation: banner-in 0.22s ease;
+  }
+  .banner-dialog[hidden] { display: none; }
+  @keyframes banner-in {
+    from { opacity: 0; transform: translateY(10px) scale(0.98); }
+    to { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .banner-dialog { animation: none; }
+  }
+  .banner-dialog[data-level='info']    { --banner-accent: var(--sb-status-info); }
+  .banner-dialog[data-level='success'] { --banner-accent: var(--sb-status-success); }
+  .banner-dialog[data-level='warning'] { --banner-accent: var(--sb-status-warning); }
+  .banner-dialog[data-level='danger']  { --banner-accent: var(--sb-status-danger); }
+  .banner-icon { color: var(--banner-accent, var(--sb-primary)); flex-shrink: 0; margin-top: 2px; }
+  .banner-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 2;
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--sb-hairline-strong);
+    border-radius: var(--sb-r-full);
+    background: var(--sb-canvas-night);
+    color: var(--sb-ink);
+    cursor: pointer;
+  }
+  .banner-close:hover { background: var(--sb-canvas); }
+  .banner-poster { display: block; }
+  .banner-poster img,
+  .banner-poster video { width: 100%; display: block; border-radius: var(--sb-r-lg) var(--sb-r-lg) 0 0; }
+  .banner-content { padding: var(--sb-xl); }
+  .banner-head { display: flex; align-items: flex-start; gap: var(--sb-sm); margin-bottom: var(--sb-sm); }
+  .banner-title { font-size: var(--sb-heading-md); font-weight: 600; letter-spacing: -0.01em; }
+  .banner-body { margin: 0; font-size: var(--sb-body-md); color: var(--sb-ink-mute); white-space: pre-line; }
+  .banner-cta {
+    display: inline-block;
+    margin-top: var(--sb-lg);
+    padding: var(--sb-sm) var(--sb-lg);
+    border-radius: var(--sb-r-sm);
+    background: var(--sb-primary);
+    color: var(--sb-on-primary);
+    font-size: var(--sb-caption);
+    font-weight: 600;
+  }
+</style>
+
 <script>
-  // Dismiss lokal + rotasi sederhana antar pengumuman.
-  const root = document.querySelector('[data-banner-root]');
+  // Popup pengumuman: tampilkan satu, hormati dismiss lokal, tutup via tombol
+  // atau Escape/backdrop, dan kunci scroll halaman selama popup terbuka.
+  const root = document.querySelector<HTMLElement>('[data-banner-root]');
   if (root) {
     const items = Array.from(root.querySelectorAll<HTMLElement>('[data-banner-item]'));
     const STORE = 'bansos:dismissed-announcements';
@@ -90,40 +173,55 @@ const isVideoPoster = (name?: string) => !!name && /\.(mp4|webm)$/i.test(name);
         return [];
       }
     };
-    const dismissed = readDismissed();
+    const writeDismissed = (id: string) => {
+      try {
+        localStorage.setItem(STORE, JSON.stringify(Array.from(new Set([...readDismissed(), id]))));
+      } catch {
+        /* storage disabled — dismissal just does not persist */
+      }
+    };
 
+    const dismissed = readDismissed();
     const kept = items.filter((el) => {
       const id = el.dataset.bannerId ?? '';
-      const dismissible = el.dataset.dismissible === 'true';
-      return !(dismissible && dismissed.includes(id));
+      return !(el.dataset.dismissible === 'true' && dismissed.includes(id));
     });
 
-    // Show the first surviving item only.
-    items.forEach((el) => el.setAttribute('hidden', ''));
-    if (kept[0]) kept[0].removeAttribute('hidden');
-    if (kept.length === 0) root.remove();
+    const show = (el: HTMLElement | undefined) => {
+      items.forEach((x) => x.setAttribute('hidden', ''));
+      if (!el) {
+        root.hidden = true;
+        document.documentElement.style.removeProperty('overflow');
+        return;
+      }
+      el.removeAttribute('hidden');
+      root.hidden = false;
+      document.documentElement.style.overflow = 'hidden';
+    };
+
+    if (kept.length === 0) {
+      root.remove();
+    } else {
+      show(kept[0]);
+    }
+
+    const closeCurrent = (persist: boolean) => {
+      const current = items.find((el) => !el.hasAttribute('hidden'));
+      if (!current) return;
+      if (persist && current.dataset.dismissible === 'true') {
+        writeDismissed(current.dataset.bannerId ?? '');
+      }
+      const idx = items.indexOf(current);
+      const next = items.slice(idx + 1).find((el) => el.dataset.dismissible !== 'true' || !readDismissed().includes(el.dataset.bannerId ?? ''));
+      show(next);
+    };
 
     root.querySelectorAll<HTMLElement>('[data-banner-close]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const item = btn.closest<HTMLElement>('[data-banner-item]');
-        if (!item) return;
-        const id = item.dataset.bannerId ?? '';
-        const next = Array.from(new Set([...readDismissed(), id]));
-        try {
-          localStorage.setItem(STORE, JSON.stringify(next));
-        } catch {
-          /* storage disabled — dismissal just does not persist */
-        }
-        const siblings = Array.from(root.querySelectorAll<HTMLElement>('[data-banner-item]'));
-        const idx = siblings.indexOf(item);
-        item.remove();
-        const remaining = Array.from(root.querySelectorAll<HTMLElement>('[data-banner-item]'));
-        if (remaining.length === 0) {
-          root.remove();
-        } else {
-          remaining[Math.min(idx, remaining.length - 1)]?.removeAttribute('hidden');
-        }
-      });
+      btn.addEventListener('click', () => closeCurrent(true));
+    });
+    root.querySelector<HTMLElement>('[data-banner-backdrop]')?.addEventListener('click', () => closeCurrent(true));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !root.hidden) closeCurrent(true);
     });
   }
 </script>

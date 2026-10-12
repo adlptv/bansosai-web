@@ -731,42 +731,8 @@ table.model-table { width: 100%; min-width: 720px; border-collapse: collapse; }
 
 /* ── Banner pengumuman ─────────────────────────────────────────────────────── */
 
-.banner { border-bottom: 1px solid var(--sb-hairline); background: var(--sb-canvas-raised); }
-.banner-inner {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sb-md);
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: var(--sb-md) var(--sb-xl);
-}
-.banner-icon { flex-shrink: 0; width: 20px; height: 20px; margin-top: 2px; }
-.banner-content { min-width: 0; flex: 1; }
-.banner-content .banner-title { font-weight: 500; font-size: var(--sb-caption); }
-.banner-content .banner-body { margin: 0; font-size: var(--sb-caption); color: var(--sb-ink-mute); }
-.banner-link { font-size: var(--sb-caption); font-weight: 500; white-space: nowrap; }
-.banner-close {
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border: none;
-  border-radius: var(--sb-r-sm);
-  background: transparent;
-  color: var(--sb-ink-mute);
-  cursor: pointer;
-}
-.banner-close:hover { background: var(--sb-canvas-night); color: var(--sb-ink); }
-.banner-poster { display: block; max-width: 1120px; margin: 0 auto; padding: var(--sb-md) var(--sb-xl) 0; }
-.banner-poster img,
-.banner-poster video { width: 100%; border-radius: var(--sb-r-md); border: 1px solid var(--sb-hairline); display: block; }
-
-.banner[data-level="info"]    { --banner-accent: var(--sb-status-info); }
-.banner[data-level="success"] { --banner-accent: var(--sb-status-success); }
-.banner[data-level="warning"] { --banner-accent: var(--sb-status-warning); }
-.banner[data-level="danger"]  { --banner-accent: var(--sb-status-danger); }
-.banner-icon { color: var(--banner-accent, var(--sb-primary)); }
+/* Banner kini berupa popup (lihat Banner.astro, scoped style). Kelas .banner
+   lama (section inline) dihapus agar tidak ada dua definisi yang berbeda. */
 
 /* ── Footer ────────────────────────────────────────────────────────────────── */
 

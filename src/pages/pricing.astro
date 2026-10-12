@@ -3,13 +3,16 @@ import Base from '../layouts/Base.astro';
 import PricingTier from '../components/PricingTier.astro';
 import Button from '../components/Button.astro';
 import { getApi } from '../lib/api/server';
+import { getToken } from '../lib/api/session';
 import { breadcrumbJsonLd } from '../lib/seo';
 import type { Plan, PlanSlot } from '../lib/api/client';
 
 let plans: Plan[] = [];
 let slots: Record<string, PlanSlot> = {};
 try {
-  const res = await getApi().getPlans();
+  // Kirim token sesi (bila ada) supaya gateway menyertakan plan yang hanya
+  // terlihat oleh akun ber-role supporter (mis. Supporter Weekly).
+  const res = await getApi().getPlans(getToken(Astro));
   plans = (res.plans ?? []).filter((p) => p.active);
   slots = res.slots ?? {};
 } catch {

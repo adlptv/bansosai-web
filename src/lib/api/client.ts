@@ -90,6 +90,8 @@ export interface Plan {
   maxConcurrent: number | null;
   active: boolean;
   slotLimit?: number;
+  /** 'all' (default) atau 'supporter' — plan yang hanya tampil untuk supporter. */
+  visibleTo?: 'all' | 'supporter';
 }
 
 export interface PlansResponse {
@@ -263,7 +265,7 @@ export interface RequestOptions {
 }
 
 export interface ApiClient {
-  getPlans(): Promise<PlansResponse>;
+  getPlans(token?: string): Promise<PlansResponse>;
   getModels(): Promise<ModelsResponse>;
   getModelInsights(range?: string): Promise<ModelInsightsResponse>;
   getAnnouncements(token?: string, placement?: AnnouncementPlacement): Promise<AnnouncementsResponse>;
@@ -334,7 +336,7 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
   }
 
   return {
-    getPlans: () => request<PlansResponse>('/saas/api/plans'),
+    getPlans: (token) => request<PlansResponse>('/saas/api/plans', { token }),
     getModels: () => request<ModelsResponse>('/saas/api/models'),
     getModelInsights: (range) =>
       request<ModelInsightsResponse>(
